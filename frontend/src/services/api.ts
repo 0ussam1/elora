@@ -1,7 +1,8 @@
 import axios from 'axios';
 import type { ResearchJob, ResearchResult, SourceInfo, ResearchReport, CollectionLog, SourceDiagnostic } from '../types';
 
-const API_BASE = 'http://127.0.0.1:8000/api';
+// Use relative '/api' with Vite proxy so it works on localhost, mobile, and LAN without CORS or IP mismatches
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 export const api = {
   getSources: async (): Promise<SourceInfo[]> => {
