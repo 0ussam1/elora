@@ -7,17 +7,20 @@ from app.core.config import settings
 
 client = TestClient(app)
 
-def test_discovery_status():
+def test_discovery_status_configured():
+    # settings loaded from backend/.env or config
+    settings.AGNES_API_KEY = "sk-test-agnes-key"
     response = client.get("/api/discovery/status")
     assert response.status_code == 200
     data = response.json()
-    assert "configured" in data
-    assert "provider" in data
+    assert data["configured"] is True
+    assert data["provider"] == "Agnes AI"
+    assert data["model"] == settings.AGNES_MODEL
 
 def test_discovery_chat_when_not_configured():
-    original_zai = settings.ZAI_API_KEY
+    original_agnes = settings.AGNES_API_KEY
     original_openai = settings.OPENAI_API_KEY
-    settings.ZAI_API_KEY = None
+    settings.AGNES_API_KEY = None
     settings.OPENAI_API_KEY = None
 
     try:
@@ -29,14 +32,14 @@ def test_discovery_chat_when_not_configured():
         data = response.json()
         assert data["status"] == "not_configured"
         assert data["configured"] is False
-        assert "ZAI_API_KEY" in data["message"]
+        assert "AGNES_API_KEY" in data["message"]
     finally:
-        settings.ZAI_API_KEY = original_zai
+        settings.AGNES_API_KEY = original_agnes
         settings.OPENAI_API_KEY = original_openai
 
 @pytest.mark.asyncio
-async def test_discovery_chat_with_mocked_ai():
-    settings.ZAI_API_KEY = "test_key_123"
+async def test_discovery_chat_with_mocked_agnes_ai():
+    settings.AGNES_API_KEY = "sk-test-agnes-key"
 
     mock_llm_json = {
         "detected_language": "en",
@@ -81,28 +84,28 @@ async def test_discovery_chat_with_mocked_ai():
         assert "web_search" in data["search_plan"]["recommended_sources"]
 
 @pytest.mark.asyncio
-async def test_discovery_chat_multilingual_darija():
-    settings.ZAI_API_KEY = "test_key_123"
+async def test_discovery_chat_multilingual_latin_darija():
+    settings.AGNES_API_KEY = "sk-test-agnes-key"
 
     mock_llm_json = {
         "detected_language": "darija",
-        "understanding": "باغي تقلب على كورسات ديال لانفورماتيك فمعالجة البيانات (Data Processing)",
-        "message": "فهمتك مزيان! كتهتم بمعالجة البيانات، هاد المجال كيتفرع لـ Data Science و Data Engineering. وجدت ليك خطة بحث شاملة.",
+        "understanding": "Bghiti t3ref 3la handasa dyal tomobilat (Automotive Engineering)",
+        "message": "Fhemtek mezian! Handasa dyal tomobilat fiha bzzaf dyal t-takhassosat bhal Mechanical Engineering, Electric Vehicles, w Automotive Electronics.",
         "needs_clarification": False,
         "clarification_question": None,
         "intent": {
-            "objective": "Find computer science courses in data processing",
+            "objective": "Explore automotive engineering resources and programs",
             "category": "education",
-            "main_topic": "Data Processing & Data Science",
-            "related_topics": ["Data Analytics", "Data Engineering", "Python"],
+            "main_topic": "Automotive Engineering",
+            "related_topics": ["Mechanical Engineering", "Electric Vehicles", "Automotive Electronics", "Vehicle Design"],
             "detected_language": "darija",
             "missing_information": None
         },
         "search_plan": {
-            "queries": ["best data processing computer science courses", "cours informatique traitement de donnees", "data engineering fundamentals tutorial"],
-            "recommended_sources": ["web_search", "openalex", "openlibrary"],
+            "queries": ["automotive engineering courses vehicle design", "electric vehicle engineering tutorial", "mechanical engineering fundamentals"],
+            "recommended_sources": ["web_search", "openalex", "openlibrary", "wikipedia"],
             "resource_types": ["courses", "tutorials", "books"],
-            "reasoning": "Combining web tutorials, academic courses, and books for data processing."
+            "reasoning": "Combining web tutorials, academic works, and book catalogs for automotive engineering."
         }
     }
 
@@ -115,23 +118,24 @@ async def test_discovery_chat_multilingual_darija():
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
         mock_post.return_value = mock_response
         response = client.post("/api/discovery/chat", json={
-            "message": "بغيت شي cours ديال informatique لي فيه traitement de données",
+            "message": "bghit chi handasa dyal tomobilat",
             "history": []
         })
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
-        assert data["intent"]["detected_language"] == "darija"
+        assert data["intent"]["main_topic"] == "Automotive Engineering"
+        assert "Electric Vehicles" in data["intent"]["related_topics"]
         assert "openalex" in data["search_plan"]["recommended_sources"]
 
 def test_discovery_search_execution():
     # Test that /api/discovery/search executes with actual connectors
     response = client.post("/api/discovery/search", json={
-        "queries": ["data science tutorial", "python data analysis"],
+        "queries": ["automotive engineering", "vehicle design tutorial"],
         "sources": ["wikipedia", "web_search"],
         "mode": "general",
         "limit_per_source": 2,
-        "original_objective": "Learn data science"
+        "original_objective": "Automotive engineering"
     })
     assert response.status_code == 200
     data = response.json()

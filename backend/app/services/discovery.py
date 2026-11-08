@@ -21,29 +21,33 @@ from app.pipeline.ranker import Ranker
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are ELORA Discovery Assistant, an intelligent exploration engine for the ELORA AI-Powered Multi-Source Search Engine.
+SYSTEM_PROMPT = """You are ELORA Discovery Assistant, an intelligent exploration and search planning engine powered by Agnes AI for the ELORA Multi-Source Search Engine.
 Your mission is to help users who have an idea, a goal, a problem, or a curiosity, but do not know exactly what to search for, which keywords to use, or which sources to explore.
 
 CORE CAPABILITIES & RULES:
-1. Multilingual Intelligence:
-   - Automatically detect the user's language (English, French, Arabic, Moroccan Darija, German, Spanish, etc.).
-   - Support mixed-language messages (e.g., French technical words inside Arabic or Darija sentences, such as: "بغيت شي cours ديال informatique لي فيه traitement de données").
-   - Respond in the user's language by default. Keep recognized technical terms in their standard form.
-   - For Moroccan Darija, reply in friendly, natural Moroccan Darija using Arabic script or Latin (Arabizi) depending on how the user wrote.
+1. Multilingual & Script Intelligence:
+   - Automatically detect the user's language: Arabic, Moroccan Darija, French, English, German, Spanish, etc.
+   - Fully understand Moroccan Darija written in either Arabic script or Latin/Arabizi script (e.g. "bghit chi handasa dyal tomobilat", "fin nelqa cours dyal data", "bghit nchri pc").
+   - Understand mixed-language messages (e.g., French or English technical words inside Darija or Arabic).
+   - ALWAYS reply in the user's language and script by default. If the user writes in Latin Darija, answer in friendly, natural Latin Darija or clear Arabic script. Keep established technical terms in their standard form.
+   - For example, if user asks: "bghit chi handasa dyal tomobilat":
+     * Recognize intent: Automotive Engineering / Vehicle Design.
+     * Suggest related subtopics: Automotive engineering, Mechanical engineering, Electric vehicles, Automotive electronics, Vehicle design.
+     * Answer naturally in Darija explaining these directions.
 
 2. Intent Understanding:
    - Identify:
      * objective: What the user is trying to accomplish.
      * category: One of ['shopping', 'education', 'books', 'developer', 'academic', 'tools', 'business', 'troubleshooting', 'general'].
-     * main_topic: Primary topic or discipline.
+     * main_topic: Primary topic or discipline (e.g. "Automotive Engineering", "Data Processing", "Machine Learning").
      * related_topics: 3-5 subtopics or adjacent disciplines.
-     * detected_language: Language code/name (e.g., "darija", "fr", "ar", "en", "de").
+     * detected_language: Language code/name (e.g. "darija", "fr", "ar", "en", "de").
 
 3. Clarification Rules:
-   - Ask at most ONE important clarification question ONLY IF the goal is truly ambiguous or essential info is missing (e.g., user asks for physical brick-and-mortar stores but didn't mention any city/country).
-   - If the user's goal is already clear enough to search (e.g., "I want to buy a PC online", "courses for data processing", "learn AI from scratch", "compare data cleaning tools"), DO NOT force questions. Set needs_clarification to false and produce the search plan immediately!
+   - Ask at most ONE important clarification question ONLY IF the goal is truly ambiguous or essential info is missing (e.g., user asks for a physical store without mentioning any location).
+   - If the user's goal is already clear enough to search (e.g., "bghit chi handasa dyal tomobilat", "courses for data processing", "I want to buy a laptop online", "learn AI from scratch"), DO NOT force questions. Set needs_clarification to false and produce the search plan immediately!
 
-4. Search Plan Generation:
+4. Search Plan Generation (Targeting ELORA Connectors):
    - queries: 2 to 4 optimized search queries. For non-English inputs, include English/French query translations where technical or academic materials are predominantly indexed in English/French, ensuring maximum search recall.
    - recommended_sources: Choose only among ELORA's actual connectors:
      * 'web_search': General web discovery, stores, products, courses, blogs, platforms
@@ -57,13 +61,13 @@ CORE CAPABILITIES & RULES:
      * 'internet_archive': Historical documents, books, public media
      * 'kaggle': Datasets, data science projects, machine learning notebooks
      * 'hackernews': Tech community sentiment, startup discussions
-   - resource_types: e.g. ["courses", "tutorials"], ["online stores", "products"], ["libraries", "documentation"], etc.
+   - resource_types: e.g. ["courses", "tutorials"], ["online stores", "products"], ["libraries", "documentation"], ["academic papers", "books"].
    - reasoning: Brief sentence in the user's language explaining why these sources and queries were chosen.
 
 5. JSON OUTPUT FORMAT:
 You MUST respond with valid JSON matching this exact structure:
 {
-  "detected_language": "en",
+  "detected_language": "darija",
   "understanding": "Clear summary of what you understood, in the user's language",
   "message": "Friendly response to the user, in their language",
   "needs_clarification": false,
@@ -71,16 +75,16 @@ You MUST respond with valid JSON matching this exact structure:
   "intent": {
     "objective": "Short summary of objective",
     "category": "education",
-    "main_topic": "Data Science",
-    "related_topics": ["Data Analytics", "Machine Learning", "Python"],
-    "detected_language": "en",
+    "main_topic": "Automotive Engineering",
+    "related_topics": ["Mechanical Engineering", "Electric Vehicles", "Automotive Electronics", "Vehicle Design"],
+    "detected_language": "darija",
     "missing_information": null
   },
   "search_plan": {
-    "queries": ["query 1", "query 2", "query 3"],
-    "recommended_sources": ["web_search", "github", "openlibrary"],
+    "queries": ["automotive engineering courses", "vehicle design mechanical engineering tutorial", "electric vehicles engineering fundamentals"],
+    "recommended_sources": ["web_search", "wikipedia", "openalex", "openlibrary"],
     "resource_types": ["courses", "tutorials", "books"],
-    "reasoning": "Reason for selection"
+    "reasoning": "Combining web courses, academic references, and book catalogs for automotive engineering."
   }
 }
 """
@@ -88,13 +92,13 @@ You MUST respond with valid JSON matching this exact structure:
 class DiscoveryService:
     @classmethod
     def get_provider_status(cls) -> Dict[str, Any]:
-        """Check whether an AI provider is configured and which one is active."""
-        if settings.ZAI_API_KEY:
+        """Check whether Agnes AI (or fallback OpenAI) is configured and active."""
+        if settings.AGNES_API_KEY:
             return {
                 "configured": True,
-                "provider": "Z.AI (GLM)",
-                "model": settings.ZAI_MODEL,
-                "base_url": settings.ZAI_BASE_URL
+                "provider": "Agnes AI",
+                "model": settings.AGNES_MODEL,
+                "base_url": settings.AGNES_BASE_URL
             }
         elif settings.OPENAI_API_KEY:
             return {
@@ -109,13 +113,13 @@ class DiscoveryService:
                 "provider": "None",
                 "model": None,
                 "base_url": None,
-                "message": "Z.AI / GLM API key is not configured. Add ZAI_API_KEY to your backend .env file."
+                "message": "Agnes AI API key is not configured. Add AGNES_API_KEY to your backend .env file."
             }
 
     @classmethod
     async def process_chat(cls, request: DiscoveryChatRequest) -> DiscoveryChatResponse:
         """
-        Process a user discovery message using the configured AI provider (Z.AI / GLM or OpenAI).
+        Process a user discovery message using Agnes AI.
         Maintains conversation context and outputs a structured discovery plan.
         """
         provider = cls.get_provider_status()
@@ -123,14 +127,14 @@ class DiscoveryService:
             return DiscoveryChatResponse(
                 status="not_configured",
                 configured=False,
-                message="ELORA Discovery Mode requires an AI provider API key. Please configure ZAI_API_KEY in your backend .env file to enable natural-language discovery.",
+                message="ELORA Discovery Assistant requires an Agnes AI API key. Please configure AGNES_API_KEY in your backend .env file to enable natural-language discovery.",
                 error_detail=provider["message"],
                 needs_clarification=False
             )
 
-        api_key = settings.ZAI_API_KEY or settings.OPENAI_API_KEY
-        base_url = settings.ZAI_BASE_URL if settings.ZAI_API_KEY else settings.OPENAI_BASE_URL
-        model = settings.ZAI_MODEL if settings.ZAI_API_KEY else settings.OPENAI_MODEL
+        api_key = settings.AGNES_API_KEY or settings.OPENAI_API_KEY
+        base_url = settings.AGNES_BASE_URL if settings.AGNES_API_KEY else settings.OPENAI_BASE_URL
+        model = settings.AGNES_MODEL if settings.AGNES_API_KEY else settings.OPENAI_MODEL
 
         # Prepare messages
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -151,114 +155,162 @@ class DiscoveryService:
             "Content-Type": "application/json"
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SECONDS) as client:
-                res = await client.post(endpoint, json=payload, headers=headers)
+        # Network execution with transient error retry
+        max_attempts = 2
+        last_error = None
 
-                if res.status_code == 401:
-                    logger.error("AI Provider returned 401 Unauthorized")
+        for attempt in range(max_attempts):
+            try:
+                async with httpx.AsyncClient(timeout=settings.AI_TIMEOUT_SECONDS) as client:
+                    res = await client.post(endpoint, json=payload, headers=headers)
+
+                    if res.status_code == 401:
+                        logger.error("Agnes AI returned 401 Unauthorized")
+                        return DiscoveryChatResponse(
+                            status="error",
+                            configured=True,
+                            message="Invalid Agnes AI credentials. Please verify your AGNES_API_KEY in the backend .env file.",
+                            error_detail="401 Unauthorized from Agnes AI endpoint.",
+                            needs_clarification=False
+                        )
+                    elif res.status_code == 402:
+                        logger.error("Agnes AI returned 402 Payment Required")
+                        return DiscoveryChatResponse(
+                            status="error",
+                            configured=True,
+                            message="Agnes AI account has insufficient credits or quota. Please check your account balance.",
+                            error_detail="402 Payment Required: Insufficient balance on Agnes AI account.",
+                            needs_clarification=False
+                        )
+                    elif res.status_code == 404:
+                        logger.error(f"Agnes AI returned 404: {res.text}")
+                        return DiscoveryChatResponse(
+                            status="error",
+                            configured=True,
+                            message=f"Configured model '{model}' was not found on Agnes AI endpoint.",
+                            error_detail=f"404 Not Found from {endpoint} for model {model}",
+                            needs_clarification=False
+                        )
+                    elif res.status_code == 429:
+                        logger.warning("Agnes AI returned 429 Rate Limit")
+                        return DiscoveryChatResponse(
+                            status="error",
+                            configured=True,
+                            message="Agnes AI rate limit reached. Please wait a moment and try again.",
+                            error_detail="429 Rate limited by Agnes AI provider.",
+                            needs_clarification=False
+                        )
+                    elif res.status_code >= 400:
+                        logger.error(f"Agnes AI error {res.status_code}: {res.text}")
+                        return DiscoveryChatResponse(
+                            status="error",
+                            configured=True,
+                            message="An error occurred while contacting Agnes AI. Please try again.",
+                            error_detail=f"HTTP {res.status_code}: {res.text[:200]}",
+                            needs_clarification=False
+                        )
+
+                    data = res.json()
+                    raw_content = data["choices"][0]["message"]["content"]
+                    parsed = cls._clean_and_parse_json(raw_content)
+
+                    if not parsed:
+                        return DiscoveryChatResponse(
+                            status="error",
+                            configured=True,
+                            message="Failed to parse structured discovery response from Agnes AI. Please rephrase your request.",
+                            error_detail="Malformed JSON from AI model.",
+                            needs_clarification=False
+                        )
+
+                    # Validate and construct DiscoveryIntent & DiscoverySearchPlan
+                    intent_data = parsed.get("intent") or {}
+                    intent = DiscoveryIntent(
+                        objective=intent_data.get("objective") or parsed.get("understanding", request.message),
+                        category=intent_data.get("category", "general"),
+                        main_topic=intent_data.get("main_topic", "General Discovery"),
+                        related_topics=intent_data.get("related_topics", []),
+                        detected_language=intent_data.get("detected_language") or parsed.get("detected_language", "en"),
+                        missing_information=intent_data.get("missing_information")
+                    )
+
+                    plan_data = parsed.get("search_plan")
+                    search_plan = None
+                    if plan_data and isinstance(plan_data, dict):
+                        queries = plan_data.get("queries") or [request.message]
+                        recommended = plan_data.get("recommended_sources") or ["web_search", "wikipedia"]
+                        # filter to only real registered connectors
+                        valid_sources = [s for s in recommended if s in CONNECTOR_REGISTRY]
+                        if not valid_sources:
+                            valid_sources = ["web_search", "wikipedia"]
+
+                        search_plan = DiscoverySearchPlan(
+                            queries=queries,
+                            recommended_sources=valid_sources,
+                            resource_types=plan_data.get("resource_types", ["general"]),
+                            reasoning=plan_data.get("reasoning", "")
+                        )
+
+                    needs_clarification = bool(parsed.get("needs_clarification", False))
+                    clarification_question = parsed.get("clarification_question")
+
+                    # If clarification is required
+                    status = "clarification" if (needs_clarification and clarification_question) else "success"
+
                     return DiscoveryChatResponse(
-                        status="error",
+                        status=status,
                         configured=True,
-                        message="Invalid AI API credentials. Please check your ZAI_API_KEY in the backend .env file.",
-                        error_detail="401 Unauthorized from AI provider endpoint.",
-                        needs_clarification=False
-                    )
-                elif res.status_code == 429:
-                    logger.warning("AI Provider returned 429 Rate Limit")
-                    return DiscoveryChatResponse(
-                        status="error",
-                        configured=True,
-                        message="AI Provider rate limit reached. Please wait a moment and try again.",
-                        error_detail="429 Rate limited by AI provider.",
-                        needs_clarification=False
-                    )
-                elif res.status_code >= 400:
-                    logger.error(f"AI Provider error {res.status_code}: {res.text}")
-                    return DiscoveryChatResponse(
-                        status="error",
-                        configured=True,
-                        message="An error occurred while contacting the AI discovery engine. Please try again.",
-                        error_detail=f"HTTP {res.status_code}: {res.text[:200]}",
-                        needs_clarification=False
+                        message=parsed.get("message") or parsed.get("understanding") or "Here is what I found for your exploration.",
+                        understanding=parsed.get("understanding"),
+                        needs_clarification=needs_clarification,
+                        clarification_question=clarification_question,
+                        intent=intent,
+                        search_plan=search_plan
                     )
 
-                data = res.json()
-                raw_content = data["choices"][0]["message"]["content"]
-                parsed = cls._clean_and_parse_json(raw_content)
-
-                if not parsed:
-                    return DiscoveryChatResponse(
-                        status="error",
-                        configured=True,
-                        message="Failed to parse structured discovery response from AI. Please rephrase your request.",
-                        error_detail="Malformed JSON from AI model.",
-                        needs_clarification=False
-                    )
-
-                # Validate and construct DiscoveryIntent & DiscoverySearchPlan
-                intent_data = parsed.get("intent") or {}
-                intent = DiscoveryIntent(
-                    objective=intent_data.get("objective") or parsed.get("understanding", request.message),
-                    category=intent_data.get("category", "general"),
-                    main_topic=intent_data.get("main_topic", "General Discovery"),
-                    related_topics=intent_data.get("related_topics", []),
-                    detected_language=intent_data.get("detected_language") or parsed.get("detected_language", "en"),
-                    missing_information=intent_data.get("missing_information")
-                )
-
-                plan_data = parsed.get("search_plan")
-                search_plan = None
-                if plan_data and isinstance(plan_data, dict):
-                    queries = plan_data.get("queries") or [request.message]
-                    recommended = plan_data.get("recommended_sources") or ["web_search", "wikipedia"]
-                    # filter to only real registered connectors
-                    valid_sources = [s for s in recommended if s in CONNECTOR_REGISTRY]
-                    if not valid_sources:
-                        valid_sources = ["web_search", "wikipedia"]
-
-                    search_plan = DiscoverySearchPlan(
-                        queries=queries,
-                        recommended_sources=valid_sources,
-                        resource_types=plan_data.get("resource_types", ["general"]),
-                        reasoning=plan_data.get("reasoning", "")
-                    )
-
-                needs_clarification = bool(parsed.get("needs_clarification", False))
-                clarification_question = parsed.get("clarification_question")
-
-                # If there's a valid search plan and clarification is not needed, mark success
-                status = "clarification" if (needs_clarification and clarification_question) else "success"
-
+            except httpx.TimeoutException as e:
+                logger.warning(f"Timeout connecting to Agnes AI (attempt {attempt+1}/{max_attempts})")
+                last_error = e
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(1.0)
+                    continue
                 return DiscoveryChatResponse(
-                    status=status,
+                    status="error",
                     configured=True,
-                    message=parsed.get("message") or parsed.get("understanding") or "Here is what I found for your exploration.",
-                    understanding=parsed.get("understanding"),
-                    needs_clarification=needs_clarification,
-                    clarification_question=clarification_question,
-                    intent=intent,
-                    search_plan=search_plan
+                    message="Agnes AI request timed out. Please try again.",
+                    error_detail="Timeout connecting to Agnes AI provider.",
+                    needs_clarification=False
+                )
+            except httpx.ConnectError as e:
+                logger.warning(f"Connection error to Agnes AI (attempt {attempt+1}/{max_attempts}): {e}")
+                last_error = e
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(1.0)
+                    continue
+                return DiscoveryChatResponse(
+                    status="error",
+                    configured=True,
+                    message="Unable to connect to Agnes AI server. Please check your network connection.",
+                    error_detail=f"ConnectError: {str(e)}",
+                    needs_clarification=False
+                )
+            except Exception as e:
+                logger.exception(f"Unexpected error in DiscoveryService.process_chat: {e}")
+                return DiscoveryChatResponse(
+                    status="error",
+                    configured=True,
+                    message="An unexpected error occurred during discovery processing.",
+                    error_detail=str(e),
+                    needs_clarification=False
                 )
 
-        except httpx.TimeoutException:
-            logger.error("Timeout connecting to AI provider")
-            return DiscoveryChatResponse(
-                status="error",
-                configured=True,
-                message="AI request timed out. Please try again.",
-                error_detail="Timeout connecting to AI provider.",
-                needs_clarification=False
-            )
-        except Exception as e:
-            logger.exception(f"Unexpected error in DiscoveryService.process_chat: {e}")
-            return DiscoveryChatResponse(
-                status="error",
-                configured=True,
-                message="An unexpected error occurred during discovery processing.",
-                error_detail=str(e),
-                needs_clarification=False
-            )
+        return DiscoveryChatResponse(
+            status="error",
+            configured=True,
+            message="An unexpected network error occurred while communicating with Agnes AI.",
+            error_detail=str(last_error) if last_error else "Max attempts reached",
+            needs_clarification=False
+        )
 
     @classmethod
     async def execute_discovery_search(
@@ -360,13 +412,11 @@ class DiscoveryService:
         grouped: Dict[str, List[Any]] = {}
         for r in ranked:
             ctype = r.content_type or "web"
-            # Map content_type to clean user-friendly categories
             group_key = cls._map_to_resource_group(ctype, r.source_name)
             if group_key not in grouped:
                 grouped[group_key] = []
             grouped[group_key].append(r)
 
-        # Summary text
         summary = (
             f"Collected {len(ranked)} verified results across {len(successful_sources)} engines "
             f"matching your discovery objective."

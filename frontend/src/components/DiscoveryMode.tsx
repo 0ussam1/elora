@@ -141,6 +141,11 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
 
   const starterPrompts = [
     {
+      title: "Automotive (Darija)",
+      desc: "Engineering & vehicle design",
+      prompt: "bghit chi handasa dyal tomobilat"
+    },
+    {
       title: "Buy a Computer",
       desc: "Find online stores & reviews",
       prompt: "I want to buy a PC, but don't know which stores or websites to check."
@@ -154,11 +159,6 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
       title: "Learn AI From Scratch",
       desc: "Curated beginner pathway",
       prompt: "I want to learn AI, but I don't know where to start."
-    },
-    {
-      title: "Developer Tools (French)",
-      desc: "Compare solutions & alternatives",
-      prompt: "Quelles sont les meilleures alternatives légères à Docker pour de petits projets ?"
     }
   ];
 
@@ -238,13 +238,13 @@ export const DiscoveryMode: React.FC<DiscoveryModeProps> = ({
             <span>AI Configuration Required for Discovery Mode</span>
           </div>
           <p className="text-[#9BA9C0] text-xs">
-            Discovery Mode uses <strong>Z.AI / GLM</strong> (or optionally OpenAI) to understand natural language requests across multiple languages.
+            Discovery Assistant is powered by <strong>Agnes AI</strong> (or optionally OpenAI) to understand natural language requests across multiple languages.
           </p>
           <div className="bg-[#070B18] p-3 rounded-xl border border-[#243149] font-mono text-[11px] text-slate-300 space-y-1">
             <p className="text-[#18BFFF]"># Add to your backend/.env file:</p>
-            <p>ZAI_API_KEY=your_zhipu_or_zai_api_key</p>
-            <p className="text-[#9BA9C0]"># Or optionally:</p>
-            <p>OPENAI_API_KEY=your_openai_api_key</p>
+            <p>AGNES_API_KEY=your_agnes_api_key</p>
+            <p>AGNES_BASE_URL=https://apihub.agnes-ai.com/v1</p>
+            <p>AGNES_MODEL=agnes-2.5-flash</p>
           </div>
         </div>
       )}

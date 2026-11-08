@@ -32,10 +32,10 @@ class Settings(BaseSettings):
     # Crossref API (Polite pool contact email)
     CROSSREF_MAILTO: str | None = "researcher@example.com"
 
-    # AI Provider: Z.AI / GLM (Primary for Discovery Mode)
-    ZAI_API_KEY: str | None = None
-    ZAI_BASE_URL: str = "https://open.bigmodel.cn/api/paas/v4"
-    ZAI_MODEL: str = "glm-4-flash"
+    # AI Provider: Agnes AI (Primary for Discovery Assistant)
+    AGNES_API_KEY: str | None = None
+    AGNES_BASE_URL: str = "https://apihub.agnes-ai.com/v1"
+    AGNES_MODEL: str = "agnes-2.5-flash"
 
     # Optional OpenAI / LLM key (Secondary fallback)
     OPENAI_API_KEY: str | None = None
