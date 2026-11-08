@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   Search, LayoutDashboard, Plus, FileText, Settings, 
   ArrowLeft, Terminal, Database, History, X, Zap, 
-  BookOpen, Globe, Code2, ShieldCheck
+  BookOpen, Globe, Code2, ShieldCheck, Sparkles
 } from 'lucide-react';
 import { api } from './services/api';
 import type { ResearchJob, SourceInfo, ResearchResult, ResearchReport, CollectionLog, SourceDiagnostic } from './types';
@@ -10,6 +10,7 @@ import { Dashboard } from './components/Dashboard';
 import { SearchPage } from './components/SearchPage';
 import { ResultsExplorer } from './components/ResultsExplorer';
 import { ReportView } from './components/ReportView';
+import { DiscoveryMode } from './components/DiscoveryMode';
 
 // ── ELORA Brand Logo ──────────────────────────────────────────────────────────
 export function EloraLogo({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
@@ -53,10 +54,11 @@ export function EloraLogo({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
 }
 
 // ── Application Tabs ─────────────────────────────────────────────────────────
-type Tab = 'home' | 'dashboard' | 'search' | 'job_detail' | 'settings';
+type Tab = 'home' | 'dashboard' | 'search' | 'job_detail' | 'settings' | 'discovery';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<Tab>('home');
+  const [initialDiscoveryPrompt, setInitialDiscoveryPrompt] = useState<string>('');
   const [jobs, setJobs] = useState<ResearchJob[]>([]);
   const [sources, setSources] = useState<SourceInfo[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
@@ -219,6 +221,7 @@ export function App() {
   };
 
   const navigationItems = [
+    { icon: Sparkles, label: 'Discovery Mode (Not Sure?)', tab: 'discovery' as Tab, desc: 'AI-guided exploration & search' },
     { icon: LayoutDashboard, label: 'Dashboard', tab: 'dashboard' as Tab, desc: 'Operations & system analytics' },
     { icon: Search, label: 'New Search', tab: 'search' as Tab, desc: 'Advanced multi-source parameters' },
     { icon: History, label: 'Research History', tab: 'dashboard' as Tab, desc: 'Past investigations & evidence' },
@@ -324,6 +327,10 @@ export function App() {
             onSelectJob={handleSelectJob}
             onNavigateDashboard={() => navigateTo('dashboard')}
             onNavigateAdvancedSearch={() => navigateTo('search')}
+            onNavigateDiscovery={(prompt) => {
+              if (prompt) setInitialDiscoveryPrompt(prompt);
+              navigateTo('discovery');
+            }}
           />
         )}
 
@@ -612,6 +619,15 @@ export function App() {
             </div>
           </div>
         )}
+
+        {/* VIEW 6: Discovery Mode ("Not Sure?") */}
+        {activeTab === 'discovery' && (
+          <DiscoveryMode
+            onBackToHome={() => navigateTo('home')}
+            onSelectJob={handleSelectJob}
+            initialPrompt={initialDiscoveryPrompt}
+          />
+        )}
       </main>
     </div>
   );
@@ -626,6 +642,7 @@ interface HomePageHeroProps {
   onSelectJob: (id: string) => void;
   onNavigateDashboard: () => void;
   onNavigateAdvancedSearch: () => void;
+  onNavigateDiscovery: (prompt?: string) => void;
 }
 
 function HomePageHero({
@@ -635,7 +652,8 @@ function HomePageHero({
   onSubmit,
   onSelectJob,
   onNavigateDashboard,
-  onNavigateAdvancedSearch
+  onNavigateAdvancedSearch,
+  onNavigateDiscovery
 }: HomePageHeroProps) {
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'web' | 'developer' | 'academic' | 'problem'>('all');
@@ -786,6 +804,38 @@ function HomePageHero({
               {sq}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* ── NOT SURE? Discovery Mode Entry Card ──────────────── */}
+      <div className="w-full max-w-[760px] mt-8 bg-gradient-to-r from-[#10182A] via-[#0E1A33] to-[#10182A] border border-[#243149] hover:border-[#18BFFF]/50 rounded-2xl p-5 sm:p-6 shadow-xl transition space-y-3 group">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#18BFFF] to-[#65D96E] flex items-center justify-center text-[#070B18] flex-shrink-0 mt-0.5 shadow-md shadow-[#18BFFF]/20">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-sm sm:text-base text-[#F5F7FC] tracking-tight">
+                  Not sure what to search?
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#18BFFF]/10 text-[#18BFFF] border border-[#18BFFF]/30 uppercase tracking-wider">
+                  Discovery Mode
+                </span>
+              </div>
+              <p className="text-xs text-[#9BA9C0] mt-1 max-w-lg leading-relaxed">
+                Tell ELORA what you're trying to find. AI will help you explore the right direction and execute real searches across all knowledge sources.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigateDiscovery(query)}
+            className="bg-[#070B18] group-hover:bg-gradient-to-r group-hover:from-[#18BFFF] group-hover:to-[#65D96E] group-hover:text-[#070B18] border border-[#243149] group-hover:border-transparent text-[#18BFFF] font-bold px-4 py-2.5 rounded-xl text-xs transition cursor-pointer flex items-center gap-2 whitespace-nowrap self-stretch sm:self-auto justify-center shadow-lg"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Explore with AI</span>
+          </button>
         </div>
       </div>
 

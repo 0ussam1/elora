@@ -32,8 +32,18 @@ class Settings(BaseSettings):
     # Crossref API (Polite pool contact email)
     CROSSREF_MAILTO: str | None = "researcher@example.com"
 
-    # Optional OpenAI / LLM key
+    # AI Provider: Z.AI / GLM (Primary for Discovery Mode)
+    ZAI_API_KEY: str | None = None
+    ZAI_BASE_URL: str = "https://open.bigmodel.cn/api/paas/v4"
+    ZAI_MODEL: str = "glm-4-flash"
+
+    # Optional OpenAI / LLM key (Secondary fallback)
     OPENAI_API_KEY: str | None = None
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    OPENAI_MODEL: str = "gpt-4o-mini"
+
+    # Discovery AI Request Timeout
+    AI_TIMEOUT_SECONDS: float = 25.0
     
     # CORS
     CORS_ORIGINS: List[str] = [

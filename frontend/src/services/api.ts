@@ -1,5 +1,9 @@
 import axios from 'axios';
-import type { ResearchJob, ResearchResult, SourceInfo, ResearchReport, CollectionLog, SourceDiagnostic } from '../types';
+import type { 
+  ResearchJob, ResearchResult, SourceInfo, ResearchReport, 
+  CollectionLog, SourceDiagnostic, DiscoveryChatMessage, 
+  DiscoveryChatResponse, DiscoverySearchResponse, DiscoveryStatus 
+} from '../types';
 
 // Use relative '/api' with Vite proxy so it works on localhost, mobile, and LAN without CORS or IP mismatches
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -71,5 +75,28 @@ export const api = {
 
   getExportUrl: (jobId: string, format: 'csv' | 'json' = 'csv'): string => {
     return `${API_BASE}/research/${jobId}/export?format=${format}`;
+  },
+
+  // ── Discovery Mode API ──────────────────────────────────────────────────────
+  getDiscoveryStatus: async (): Promise<DiscoveryStatus> => {
+    const res = await axios.get(`${API_BASE}/discovery/status`);
+    return res.data;
+  },
+
+  sendDiscoveryChat: async (message: string, history: DiscoveryChatMessage[] = []): Promise<DiscoveryChatResponse> => {
+    const res = await axios.post(`${API_BASE}/discovery/chat`, { message, history });
+    return res.data;
+  },
+
+  executeDiscoverySearch: async (params: {
+    queries: string[];
+    sources?: string[];
+    mode?: string;
+    limit_per_source?: number;
+    original_objective?: string;
+    language?: string;
+  }): Promise<DiscoverySearchResponse> => {
+    const res = await axios.post(`${API_BASE}/discovery/search`, params);
+    return res.data;
   }
 };

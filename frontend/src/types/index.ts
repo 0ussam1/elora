@@ -115,3 +115,56 @@ export interface ResearchReport {
   };
   created_at: string;
 }
+
+// ── Discovery Mode Types ──────────────────────────────────────────────────────
+export interface DiscoveryChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface DiscoveryIntent {
+  objective: string;
+  category: string;
+  main_topic: string;
+  related_topics: string[];
+  detected_language: string;
+  missing_information?: string | null;
+}
+
+export interface DiscoverySearchPlan {
+  queries: string[];
+  recommended_sources: string[];
+  resource_types: string[];
+  reasoning?: string;
+}
+
+export interface DiscoveryChatResponse {
+  status: 'success' | 'clarification' | 'not_configured' | 'error';
+  configured: boolean;
+  message: string;
+  understanding?: string | null;
+  needs_clarification: boolean;
+  clarification_question?: string | null;
+  intent?: DiscoveryIntent | null;
+  search_plan?: DiscoverySearchPlan | null;
+  error_detail?: string | null;
+}
+
+export interface DiscoverySearchResponse {
+  job_id: string;
+  queries_executed: string[];
+  total_results: number;
+  results: ResearchResult[];
+  grouped_by_type: Record<string, ResearchResult[]>;
+  summary?: string | null;
+  sources_queried: string[];
+}
+
+export interface DiscoveryStatus {
+  configured: boolean;
+  provider: string;
+  model?: string | null;
+  base_url?: string | null;
+  message?: string | null;
+}
+
