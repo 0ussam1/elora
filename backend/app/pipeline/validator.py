@@ -49,8 +49,10 @@ DISCUSSION_SOURCES = {
     "hackernews", "reddit", "stackexchange", "discourse", "lemmy", "mastodon",
 }
 
-_MAX_BODY_BYTES = 131_072  # 128 KB cap so we never download large binaries
-_REQUEST_TIMEOUT = 6.0
+_MAX_BODY_BYTES = 65_536  # 64 KB cap so we never download large binaries
+_REQUEST_TIMEOUT = 3.0
+_BATCH_TIMEOUT = 8.0
+_MAX_VALIDATE_ITEMS = 25
 _DEFAULT_HEADERS = {
     "User-Agent": "ELORA-Validator/1.0 (+https://github.com/0ussam1/elora; research-verification)",
     "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
@@ -302,22 +304,7 @@ class ResultValidator:
             )
 
         try:
-            # 1. Try lightweight HEAD first
-            head_resp = await client.head(
-                url, headers=_DEFAULT_HEADERS, follow_redirects=True, timeout=_REQUEST_TIMEOUT
-            )
-            if head_resp.status_code in (404, 410):
-                return ValidationOutcome(
-                    status=STATUS_NOT_FOUND,
-                    http_status=head_resp.status_code,
-                    final_url=str(head_resp.url),
-                    method="http_head",
-                    reason=f"HTTP {head_resp.status_code}",
-                    extraction_status="unavailable",
-                    availability_status="missing",
-                )
-
-            # 2. Always perform a bounded GET for HTML content check (or when HEAD is rejected)
+            # Single bounded GET stream (avoids 2x round-trip latency of HEAD + GET)
             async with client.stream(
                 "GET", url, headers=_DEFAULT_HEADERS, follow_redirects=True, timeout=_REQUEST_TIMEOUT
             ) as resp:
@@ -696,22 +683,59 @@ class ResultValidator:
         cls,
         items: List[ResearchResult],
         db: Optional[Session] = None,
-        max_concurrency: int = 8,
+        max_concurrency: int = 24,
+        max_items: int = _MAX_VALIDATE_ITEMS,
     ) -> List[ResearchResult]:
-        """Validate all non-duplicate results concurrently and sort VERIFIED first."""
+        """Validate top non-duplicate results concurrently within a strict time budget."""
         if not items:
             return items
 
+        candidates = [it for it in items if not it.is_duplicate][:max_items]
         sem = asyncio.Semaphore(max_concurrency)
+        pending_cache_writes: List[Tuple[str, str, ValidationOutcome]] = []
 
-        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
-            async def _run(item: ResearchResult):
-                if item.is_duplicate:
-                    return
-                async with sem:
-                    await cls.validate_result(item, client, db=db)
+        # Pre-check cache synchronously in one pass to avoid concurrent DB session access
+        uncached: List[ResearchResult] = []
+        for it in candidates:
+            cached = cls._read_cache(db, it.source_url or "")
+            if cached:
+                outcome = ValidationOutcome(
+                    status=cached.validation_status,
+                    http_status=cached.http_status,
+                    final_url=cached.final_url,
+                    canonical_url=cached.canonical_url,
+                    method=f"cache:{cached.validation_method or 'cached'}",
+                    reason=cached.failure_reason,
+                    extraction_status="extracted" if cached.validation_status == STATUS_VERIFIED else "snippet_only",
+                    availability_status="available" if cached.validation_status == STATUS_VERIFIED else "restricted",
+                )
+                cls._apply_outcome(it, outcome)
+            else:
+                uncached.append(it)
 
-            await asyncio.gather(*(_run(it) for it in items), return_exceptions=True)
+        if uncached:
+            async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+                async def _run(item: ResearchResult):
+                    async with sem:
+                        outcome = await cls._verify_source_api(client, item)
+                        if outcome is None:
+                            outcome = await cls._verify_url_http(
+                                client, item.source_url or "", item.title, item.content_snippet
+                            )
+                        cls._apply_outcome(item, outcome)
+                        if item.source_url:
+                            pending_cache_writes.append((item.source_url, item.source_name, outcome))
+
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(*(_run(it) for it in uncached), return_exceptions=True),
+                        timeout=_BATCH_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"Validation batch reached {_BATCH_TIMEOUT}s budget; remaining items left UNCHECKED")
+
+            for url, sname, outcome in pending_cache_writes:
+                cls._write_cache(db, url, sname, outcome)
 
         priority = {
             STATUS_VERIFIED: 0,

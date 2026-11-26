@@ -86,13 +86,18 @@ class _FakeStreamResponse:
 def _mock_client(head_status=200, get_resp=None, get_json_map=None, head_exc=None):
     client = AsyncMock(spec=httpx.AsyncClient)
 
-    async def _head(url, **kwargs):
+    if get_resp is None:
+        get_resp = _FakeStreamResponse(head_status, "https://example.com", b"")
+
+    def _stream(method, url, **kwargs):
         if head_exc:
-            raise head_exc
-        r = MagicMock()
-        r.status_code = head_status
-        r.url = url
-        return r
+            class _ErrCtx:
+                async def __aenter__(self):
+                    raise head_exc
+                async def __aexit__(self, *args):
+                    return False
+            return _ErrCtx()
+        return get_resp
 
     async def _get(url, **kwargs):
         if get_json_map:
@@ -110,9 +115,8 @@ def _mock_client(head_status=200, get_resp=None, get_json_map=None, head_exc=Non
         r.json.return_value = None
         return r
 
-    client.head = AsyncMock(side_effect=_head)
     client.get = AsyncMock(side_effect=_get)
-    client.stream = MagicMock(return_value=get_resp)
+    client.stream = MagicMock(side_effect=_stream)
     return client
 
 
@@ -308,14 +312,14 @@ async def test_validation_cache_hit_and_expiry():
     item1 = _make_result(url="https://example.com/cached")
     out1 = await ResultValidator.validate_result(item1, client, db=db)
     assert out1.status == STATUS_VERIFIED
-    assert client.head.call_count == 1
+    assert client.stream.call_count == 1
 
     # Second call should hit cache without making any HTTP request
     item2 = _make_result(source_item_id="item2", url="https://example.com/cached")
     out2 = await ResultValidator.validate_result(item2, client, db=db)
     assert out2.status == STATUS_VERIFIED
     assert out2.method.startswith("cache:")
-    assert client.head.call_count == 1
+    assert client.stream.call_count == 1
 
     # Expire cache entry -> should revalidate via network
     cache_row = db.query(ValidationCache).filter(ValidationCache.url_hash == _url_hash("https://example.com/cached")).first()
@@ -326,4 +330,4 @@ async def test_validation_cache_hit_and_expiry():
     out3 = await ResultValidator.validate_result(item3, client, db=db)
     assert out3.status == STATUS_VERIFIED
     assert not out3.method.startswith("cache:")
-    assert client.head.call_count == 2
+    assert client.stream.call_count == 2
