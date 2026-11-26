@@ -12,6 +12,13 @@ from app.connectors.internet_archive import InternetArchiveConnector
 from app.connectors.openalex import OpenAlexConnector
 from app.connectors.crossref import CrossrefConnector
 from app.connectors.openlibrary import OpenLibraryConnector
+# New sources — 6 additional connectors
+from app.connectors.semantic_scholar import SemanticScholarConnector
+from app.connectors.core_ac import CoreACConnector
+from app.connectors.zenodo import ZenodoConnector
+from app.connectors.discourse import DiscourseConnector
+from app.connectors.lemmy import LemmyConnector
+from app.connectors.mastodon import MastodonConnector
 
 CONNECTOR_REGISTRY: Dict[str, BaseConnector] = {
     "hackernews": HackerNewsConnector(),
@@ -26,6 +33,13 @@ CONNECTOR_REGISTRY: Dict[str, BaseConnector] = {
     "openalex": OpenAlexConnector(),
     "crossref": CrossrefConnector(),
     "openlibrary": OpenLibraryConnector(),
+    # New high-value sources
+    "semantic_scholar": SemanticScholarConnector(),
+    "core": CoreACConnector(),
+    "zenodo": ZenodoConnector(),
+    "discourse": DiscourseConnector(),
+    "lemmy": LemmyConnector(),
+    "mastodon": MastodonConnector(),
 }
 
 def get_connector(source_id: str) -> BaseConnector | None:

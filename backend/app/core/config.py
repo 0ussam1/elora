@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     OPENALEX_API_KEY: str | None = None
     OPENALEX_EMAIL: str | None = None
 
+    # Semantic Scholar (Optional key — 100 req/min free, 10M/month with key)
+    # Register free at: https://www.semanticscholar.org/product/api
+    SEMANTIC_SCHOLAR_API_KEY: str | None = None
+
+    # CORE Open Access API (Required key — free tier at https://core.ac.uk/services/api)
+    CORE_API_KEY: str | None = None
+
     # Crossref API (Polite pool contact email)
     CROSSREF_MAILTO: str | None = "researcher@example.com"
 
