@@ -2,7 +2,7 @@ import asyncio
 import time
 import logging
 from typing import List
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from app.models.database import ResearchJob, ResearchResult, CollectionLog
 from app.connectors.registry import CONNECTOR_REGISTRY, get_connector
@@ -105,7 +105,7 @@ class ResearchCoordinator:
 
         job.status = "completed"
         job.progress = 100.0
-        job.completed_at = datetime.utcnow()
+        job.completed_at = datetime.now(timezone.utc)
         db.commit()
 
     @staticmethod

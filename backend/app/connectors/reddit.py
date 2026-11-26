@@ -1,7 +1,7 @@
 import httpx
 import time
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 from app.connectors.base import BaseConnector, RawResult
 from app.core.config import settings
 import logging
@@ -125,7 +125,7 @@ class RedditConnector(BaseConnector):
         3. Makes lightweight read request to /api/v1/me or /subreddits/popular
         4. Verifies response validity and rate-limit headers
         """
-        now_str = datetime.utcnow().isoformat()
+        now_str = datetime.now(timezone.utc).isoformat()
         if not self.is_configured():
             diag = {
                 "configured": False,

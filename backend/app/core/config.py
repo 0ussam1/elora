@@ -1,5 +1,6 @@
 import os
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from typing import List
 
 class Settings(BaseSettings):
@@ -52,8 +53,6 @@ class Settings(BaseSettings):
         "http://localhost:3000"
     ]
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    model_config = ConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()

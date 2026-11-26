@@ -2,7 +2,7 @@ import uuid
 import csv
 import io
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from fastapi.responses import StreamingResponse
@@ -47,7 +47,7 @@ async def test_source_connection(source_id: str):
             "connected": health.get("status") == "operational",
             "status": health.get("status", "operational"),
             "message": health.get("message", "Connector operational"),
-            "last_checked_at": datetime.utcnow().isoformat()
+            "last_checked_at": datetime.now(timezone.utc).isoformat()
         }
 
     return {
@@ -160,7 +160,7 @@ def get_research_report(job_id: str, db: Session = Depends(get_db)):
 @router.get("/research/{job_id}/export")
 def export_research_results(
     job_id: str,
-    format: str = Query("csv", regex="^(csv|json)$"),
+    format: str = Query("csv", pattern="^(csv|json)$"),
     db: Session = Depends(get_db)
 ):
     results = db.query(ResearchResult).filter(

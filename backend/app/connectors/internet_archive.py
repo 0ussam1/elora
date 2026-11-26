@@ -1,6 +1,6 @@
 import httpx
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from app.connectors.base import BaseConnector, RawResult
 from app.core.config import settings
 import logging
@@ -29,7 +29,7 @@ class InternetArchiveConnector(BaseConnector):
         return 30
 
     async def test_connection(self) -> Dict[str, Any]:
-        now_str = datetime.utcnow().isoformat()
+        now_str = datetime.now(timezone.utc).isoformat()
         try:
             async with httpx.AsyncClient(timeout=settings.REQUEST_TIMEOUT_SECONDS) as client:
                 params = {

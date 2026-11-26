@@ -3,7 +3,7 @@ import logging
 import re
 import uuid
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import httpx
 from sqlalchemy.orm import Session
@@ -405,7 +405,7 @@ class DiscoveryService:
         job.total_results_count = len(ranked)
         job.status = "completed"
         job.progress = 100.0
-        job.completed_at = datetime.utcnow()
+        job.completed_at = datetime.now(timezone.utc)
         db.commit()
 
         # Group results by resource/content type for clean presentation

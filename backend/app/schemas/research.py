@@ -1,4 +1,4 @@
-from pydantic import BaseModel, HttpUrl, Field
+from pydantic import BaseModel, HttpUrl, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -27,8 +27,7 @@ class ResearchResultResponse(BaseModel):
     is_duplicate: bool = False
     duplicate_of: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ResearchJobResponse(BaseModel):
     id: str
@@ -44,8 +43,7 @@ class ResearchJobResponse(BaseModel):
     updated_at: datetime
     completed_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class SourceInfo(BaseModel):
     id: str
@@ -60,8 +58,7 @@ class SourceInfo(BaseModel):
     health_status: str
     message: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class SourceDiagnosticResponse(BaseModel):
     source_id: str
@@ -82,8 +79,7 @@ class CollectionLogResponse(BaseModel):
     duration_ms: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ResearchReportResponse(BaseModel):
     id: str
@@ -98,5 +94,4 @@ class ResearchReportResponse(BaseModel):
     collection_stats: Dict[str, Any]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

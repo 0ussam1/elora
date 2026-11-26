@@ -1,4 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
+
+def _utcnow():
+    return datetime.now(timezone.utc)
 from sqlalchemy import Column, Integer, String, Text, Float, DateTime, ForeignKey, JSON, Boolean
 from sqlalchemy.orm import relationship
 from app.database.session import Base
@@ -17,8 +20,8 @@ class ResearchJob(Base):
     total_results_count = Column(Integer, default=0)
     error_message = Column(Text, nullable=True)
     
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow, index=True)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
     completed_at = Column(DateTime, nullable=True)
 
     results = relationship("ResearchResult", back_populates="job", cascade="all, delete-orphan")
@@ -54,7 +57,7 @@ class ResearchResult(Base):
     source_url = Column(String(1000), nullable=False)
     author = Column(String(255), nullable=True)
     published_at = Column(DateTime, nullable=True)
-    collected_at = Column(DateTime, default=datetime.utcnow)
+    collected_at = Column(DateTime, default=_utcnow)
     content_type = Column(String(50), default="article") # discussion, issue, paper, article, doc
     engagement_metrics = Column(JSON, default=dict) # {"score": 10, "comments": 5, "stars": 20}
     metadata_fields = Column(JSON, default=dict) # raw source-specific fields
@@ -78,7 +81,7 @@ class ResearchReport(Base):
     potential_opportunities = Column(JSON, default=list)
     limitations = Column(JSON, default=list)
     collection_stats = Column(JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     job = relationship("ResearchJob", back_populates="reports")
 
@@ -93,6 +96,6 @@ class CollectionLog(Base):
     message = Column(Text, nullable=False)
     items_collected = Column(Integer, default=0)
     duration_ms = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     job = relationship("ResearchJob", back_populates="logs")
