@@ -1,3 +1,12 @@
+import os
+import sys
+from pathlib import Path
+
+# Ensure backend directory is in sys.path when launched from repository root (e.g. FastAPI Cloud)
+_backend_dir = str(Path(__file__).resolve().parent.parent)
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
@@ -5,7 +14,6 @@ from app.database.session import engine, Base
 from app.api.endpoints import router as api_router
 from app.api.discovery_endpoints import router as discovery_router
 import app.models.database # ensure models are registered with Base
-import os
 
 # Create tables if not existing
 Base.metadata.create_all(bind=engine)
