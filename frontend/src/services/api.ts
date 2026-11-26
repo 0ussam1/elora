@@ -57,7 +57,7 @@ export const api = {
 
   getResults: async (
     jobId: string,
-    params?: { source?: string; content_type?: string; min_relevance?: number; include_duplicates?: boolean }
+    params?: { source?: string; content_type?: string; min_relevance?: number; include_duplicates?: boolean; include_excluded?: boolean }
   ): Promise<ResearchResult[]> => {
     const res = await axios.get(`${API_BASE}/research/${jobId}/results`, { params });
     return res.data;

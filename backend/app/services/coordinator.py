@@ -9,6 +9,7 @@ from app.connectors.registry import CONNECTOR_REGISTRY, get_connector
 from app.pipeline.normalizer import Normalizer
 from app.pipeline.deduplicator import Deduplicator
 from app.pipeline.ranker import Ranker
+from app.pipeline.validator import ResultValidator
 from app.pipeline.report_generator import ReportGenerator
 
 logger = logging.getLogger(__name__)
@@ -91,16 +92,19 @@ class ResearchCoordinator:
         # Pipeline: Relevance Ranking (TF-IDF, query overlap, metrics)
         ranked = Ranker.rank(job.query, deduped, mode=job.mode)
 
+        # Pipeline: Multi-layer URL, content & source API validation
+        validated = await ResultValidator.validate_batch(ranked, db=db)
+
         # Persistence: save results
-        for r in ranked:
+        for r in validated:
             db.add(r)
         
-        job.total_results_count = len(ranked)
+        job.total_results_count = len(validated)
         job.progress = 85.0
         db.commit()
 
         # Pipeline: Report Generation
-        report = ReportGenerator.generate(job.id, job.query, ranked)
+        report = ReportGenerator.generate(job.id, job.query, validated)
         db.add(report)
 
         job.status = "completed"
