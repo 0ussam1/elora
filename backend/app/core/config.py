@@ -10,8 +10,17 @@ class Settings(BaseSettings):
     
     # Rate limits and timeouts
     REQUEST_TIMEOUT_SECONDS: float = 12.0
-    MAX_CONCURRENT_REQUESTS: int = 5
+    PROVIDER_TIMEOUT_SECONDS: float = 8.0
+    MAX_CONCURRENT_REQUESTS: int = 8
     DEFAULT_RESULT_LIMIT: int = 20
+
+    # Caching & Validation
+    SEARCH_CACHE_TTL_SECONDS: int = 300
+    URL_VALIDATION_CACHE_TTL_SECONDS: int = 1800
+    DEEP_VALIDATION_CACHE_TTL_SECONDS: int = 3600
+    VALIDATION_TIMEOUT_SECONDS: float = 4.0
+    VALIDATION_MAX_CONCURRENT: int = 10
+    DEEP_VALIDATION_MAX_ITEMS: int = 8
     
     # Optional API Keys (none strictly required for initial free tier sources)
     GITHUB_TOKEN: str | None = None

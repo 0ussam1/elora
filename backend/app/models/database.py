@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 def _utcnow():
     return datetime.now(timezone.utc)
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, ForeignKey, JSON, Boolean
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, ForeignKey, JSON, Boolean, Index
 from sqlalchemy.orm import relationship
 from app.database.session import Base
 
@@ -65,34 +65,11 @@ class ResearchResult(Base):
     is_duplicate = Column(Boolean, default=False)
     duplicate_of = Column(String(64), nullable=True)
 
-    # Validation & Provenance fields
-    validation_status = Column(String(32), default="UNCHECKED", index=True)
-    canonical_url = Column(String(1000), nullable=True)
-    final_url = Column(String(1000), nullable=True)
-    http_status = Column(Integer, nullable=True)
-    validation_method = Column(String(64), nullable=True)
-    validation_reason = Column(Text, nullable=True)
-    validated_at = Column(DateTime, nullable=True)
-    content_extraction_status = Column(String(32), default="snippet_only")
-    content_availability_status = Column(String(32), default="unknown")
-
     job = relationship("ResearchJob", back_populates="results")
 
-
-class ValidationCache(Base):
-    __tablename__ = "validation_cache"
-
-    url_hash = Column(String(64), primary_key=True, index=True)
-    url = Column(String(1000), nullable=False)
-    source_name = Column(String(50), nullable=True)
-    validation_status = Column(String(32), nullable=False, index=True)
-    http_status = Column(Integer, nullable=True)
-    final_url = Column(String(1000), nullable=True)
-    canonical_url = Column(String(1000), nullable=True)
-    validation_method = Column(String(64), nullable=True)
-    failure_reason = Column(Text, nullable=True)
-    validated_at = Column(DateTime, default=_utcnow, nullable=False)
-    expires_at = Column(DateTime, nullable=False, index=True)
+    __table_args__ = (
+        Index("ix_research_results_job_dup_rel", "job_id", "is_duplicate", "relevance_score"),
+    )
 
 
 class ResearchReport(Base):

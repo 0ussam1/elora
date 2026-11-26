@@ -23,6 +23,15 @@ router = APIRouter()
 def health_check():
     return {"status": "ok", "service": "Multi-Source AI Research Engine"}
 
+@router.get("/performance/stats")
+def performance_stats():
+    from app.core.cache import get_all_cache_stats
+    from app.core.resilience import circuit_breakers
+    return {
+        "caches": get_all_cache_stats(),
+        "circuit_breakers": circuit_breakers.snapshot(),
+    }
+
 @router.get("/sources", response_model=List[SourceInfo])
 def get_sources():
     return list_all_sources()
@@ -128,7 +137,6 @@ def get_research_results(
     content_type: Optional[str] = None,
     min_relevance: Optional[float] = 0.0,
     include_duplicates: bool = False,
-    include_excluded: bool = False,
     limit: int = 50,
     offset: int = 0,
     db: Session = Depends(get_db)
@@ -136,10 +144,6 @@ def get_research_results(
     query = db.query(ResearchResult).filter(ResearchResult.job_id == job_id)
     if not include_duplicates:
         query = query.filter(ResearchResult.is_duplicate == False)
-    if not include_excluded:
-        query = query.filter(
-            ResearchResult.validation_status.in_(["VERIFIED", "PARTIALLY_VERIFIED", "UNCHECKED"])
-        )
     if source:
         query = query.filter(ResearchResult.source_name == source)
     if content_type:
@@ -148,8 +152,6 @@ def get_research_results(
         query = query.filter(ResearchResult.relevance_score >= min_relevance)
 
     results = query.order_by(ResearchResult.relevance_score.desc()).offset(offset).limit(limit).all()
-    priority = {"VERIFIED": 0, "PARTIALLY_VERIFIED": 1, "UNCHECKED": 2}
-    results.sort(key=lambda r: (priority.get(r.validation_status or "UNCHECKED", 3), -(r.relevance_score or 0.0)))
     return results
 
 @router.get("/research/{job_id}/logs", response_model=List[CollectionLogResponse])

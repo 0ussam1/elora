@@ -60,6 +60,10 @@ def get_connector(source_id: str) -> BaseConnector | None:
     return CONNECTOR_REGISTRY.get(source_id)
 
 def list_all_sources() -> List[Dict]:
+    from app.core.cache import provider_meta_cache
+    cached = provider_meta_cache.get("all_sources")
+    if cached is not None:
+        return cached
     sources = []
     for sid, conn in CONNECTOR_REGISTRY.items():
         health = conn.check_health()
@@ -76,4 +80,5 @@ def list_all_sources() -> List[Dict]:
             "rate_limit_per_minute": rate_limit,
             "message": health.get("message", "")
         })
+    provider_meta_cache.set("all_sources", sources, ttl=60)
     return sources

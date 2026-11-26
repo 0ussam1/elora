@@ -18,6 +18,7 @@ Scope: Corporate entities, registered agents, beneficial owners, offshore addres
 Legal: ICIJ releases data in the public interest under journalism/investigative reporting
        norms. Data is verified by ICIJ member journalists.
 """
+import asyncio
 import httpx
 import logging
 from typing import List, Dict, Any, Optional
@@ -168,10 +169,15 @@ class ICIJOffshoreLeaksConnector(BaseConnector):
                 for key in data:
                     candidates.extend(data[key].get("result", []))
 
-                # Sort by score descending
+                # Sort by score descending and fetch node details concurrently
                 candidates.sort(key=lambda c: c.get("score", 0), reverse=True)
+                top_candidates = candidates[:limit]
+                node_details = await asyncio.gather(
+                    *(self._fetch_node_detail(client, str(c.get("id", ""))) for c in top_candidates),
+                    return_exceptions=True,
+                )
 
-                for candidate in candidates[:limit]:
+                for candidate, node_detail_res in zip(top_candidates, node_details):
                     node_id = str(candidate.get("id", ""))
                     name = candidate.get("name", "Unknown Entity")
                     score = candidate.get("score", 0)
@@ -195,8 +201,7 @@ class ICIJOffshoreLeaksConnector(BaseConnector):
                                 source_id_raw = src_key
                                 break
 
-                    # Try to get additional details from node JSON endpoint
-                    node_detail = await self._fetch_node_detail(client, node_id)
+                    node_detail = None if isinstance(node_detail_res, Exception) else node_detail_res
                     jurisdiction = None
                     pub_at: Optional[datetime] = None
                     if isinstance(node_detail, list) and node_detail:

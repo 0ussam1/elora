@@ -1,22 +1,17 @@
-import React, { useState } from 'react';
-import { ExternalLink, Filter, Download, User, Calendar, ShieldCheck, ShieldAlert, AlertTriangle, Eye, EyeOff } from 'lucide-react';
-import type { ResearchResult, ValidationStatus } from '../types';
+import React, { useState, useMemo } from 'react';
+import { ExternalLink, Filter, Download, User, Calendar } from 'lucide-react';
+import type { ResearchResult } from '../types';
 
-const EXCLUDED_STATUSES = new Set<ValidationStatus>([
-  'INACCESSIBLE',
-  'DELETED',
-  'NOT_FOUND',
-  'MISMATCH',
-]);
-
-const STATUS_BADGE: Record<ValidationStatus, { label: string; cls: string }> = {
-  VERIFIED: { label: 'Verified', cls: 'bg-emerald-950/80 text-emerald-400 border-emerald-800/60' },
-  PARTIALLY_VERIFIED: { label: 'Partially Verified', cls: 'bg-amber-950/80 text-amber-300 border-amber-800/60' },
-  INACCESSIBLE: { label: 'Inaccessible', cls: 'bg-orange-950/80 text-orange-400 border-orange-800/60' },
-  DELETED: { label: 'Deleted', cls: 'bg-rose-950/80 text-rose-400 border-rose-800/60' },
-  NOT_FOUND: { label: 'Not Found', cls: 'bg-rose-950/80 text-rose-400 border-rose-800/60' },
-  MISMATCH: { label: 'Content Mismatch', cls: 'bg-rose-950/80 text-rose-400 border-rose-800/60' },
-  UNCHECKED: { label: 'Unchecked', cls: 'bg-slate-800 text-slate-400 border-slate-700' },
+const VALIDATION_BADGE_MAP: Record<string, { label: string; cls: string }> = {
+  VERIFIED: { label: 'Verified', cls: 'bg-emerald-950 text-emerald-400 border-emerald-800/60' },
+  LIGHT_VERIFIED: { label: 'Link OK', cls: 'bg-emerald-950/70 text-emerald-300 border-emerald-800/40' },
+  FAST_VERIFIED: { label: 'Fast Check', cls: 'bg-slate-800 text-sky-300 border-slate-700' },
+  PENDING: { label: 'Validating...', cls: 'bg-slate-800 text-slate-400 border-slate-700' },
+  PROTECTED: { label: 'Protected', cls: 'bg-amber-950/70 text-amber-300 border-amber-800/50' },
+  BROKEN_LINK: { label: 'Broken Link', cls: 'bg-rose-950 text-rose-400 border-rose-800/60' },
+  SOFT_404: { label: 'Soft 404', cls: 'bg-rose-950 text-rose-400 border-rose-800/60' },
+  UNREACHABLE: { label: 'Unreachable', cls: 'bg-amber-950 text-amber-400 border-amber-800/60' },
+  UNVERIFIED: { label: 'Unverified', cls: 'bg-slate-800 text-slate-400 border-slate-700' },
 };
 
 interface ResultsExplorerProps {
@@ -31,16 +26,18 @@ export const ResultsExplorer: React.FC<ResultsExplorerProps> = ({ results, onExp
   const [minRelevance] = useState(0);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [sortBy, setSortBy] = useState<'relevance' | 'date'>('relevance');
-  const [showExcluded, setShowExcluded] = useState(false);
 
-  // Available unique sources and types
-  const uniqueSources = Array.from(new Set(results.map(r => r.source_name)));
-  const uniqueTypes = Array.from(new Set(results.map(r => r.content_type)));
-  const excludedCount = results.filter(r => r.validation_status && EXCLUDED_STATUSES.has(r.validation_status)).length;
+  // Available unique sources and types (memoized to avoid unnecessary re-computation)
+  const uniqueSources = useMemo(
+    () => Array.from(new Set(results.map(r => r.source_name))),
+    [results]
+  );
+  const uniqueTypes = useMemo(
+    () => Array.from(new Set(results.map(r => r.content_type))),
+    [results]
+  );
 
-  const filtered = results.filter(r => {
-    const vStatus = r.validation_status || 'UNCHECKED';
-    if (!showExcluded && EXCLUDED_STATUSES.has(vStatus)) return false;
+  const filtered = useMemo(() => results.filter(r => {
     if (filterSource !== 'all' && r.source_name !== filterSource) return false;
     if (filterType !== 'all' && r.content_type !== filterType) return false;
     if (r.relevance_score < minRelevance) return false;
@@ -50,15 +47,11 @@ export const ResultsExplorer: React.FC<ResultsExplorerProps> = ({ results, onExp
     }
     return true;
   }).sort((a, b) => {
-    const prio: Record<string, number> = { VERIFIED: 0, PARTIALLY_VERIFIED: 1, UNCHECKED: 2 };
-    const pa = prio[a.validation_status || 'UNCHECKED'] ?? 3;
-    const pb = prio[b.validation_status || 'UNCHECKED'] ?? 3;
-    if (pa !== pb) return pa - pb;
     if (sortBy === 'relevance') return b.relevance_score - a.relevance_score;
     const dateA = a.published_at ? new Date(a.published_at).getTime() : 0;
     const dateB = b.published_at ? new Date(b.published_at).getTime() : 0;
     return dateB - dateA;
-  });
+  }), [results, filterSource, filterType, minRelevance, searchKeyword, sortBy]);
 
   return (
     <div className="space-y-4">
@@ -127,17 +120,6 @@ export const ResultsExplorer: React.FC<ResultsExplorerProps> = ({ results, onExp
             <Download className="w-3.5 h-3.5 text-emerald-400" />
             <span>JSON</span>
           </button>
-
-          {excludedCount > 0 && (
-            <button
-              onClick={() => setShowExcluded(prev => !prev)}
-              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-1.5 rounded-lg border border-slate-700 transition cursor-pointer"
-              title="Toggle excluded (inaccessible, deleted, 404, or mismatched) results"
-            >
-              {showExcluded ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5 text-slate-400" />}
-              <span>{showExcluded ? 'Hide' : 'Show'} excluded ({excludedCount})</span>
-            </button>
-          )}
         </div>
       </div>
 
@@ -165,15 +147,11 @@ export const ResultsExplorer: React.FC<ResultsExplorerProps> = ({ results, onExp
                         {item.content_type}
                       </span>
                       {(() => {
-                        const vStatus = item.validation_status || 'UNCHECKED';
-                        const badge = STATUS_BADGE[vStatus] || STATUS_BADGE.UNCHECKED;
-                        const Icon = vStatus === 'VERIFIED' ? ShieldCheck : vStatus === 'PARTIALLY_VERIFIED' ? AlertTriangle : ShieldAlert;
+                        const vStatus = item.metadata_fields?.validation_status;
+                        const badge = vStatus ? VALIDATION_BADGE_MAP[vStatus] : undefined;
+                        if (!badge) return null;
                         return (
-                          <span
-                            title={item.validation_reason || `Status: ${vStatus}${item.validation_method ? ` (${item.validation_method})` : ''}`}
-                            className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border ${badge.cls}`}
-                          >
-                            <Icon className="w-3 h-3" />
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${badge.cls}`}>
                             {badge.label}
                           </span>
                         );

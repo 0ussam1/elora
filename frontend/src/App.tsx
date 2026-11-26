@@ -144,10 +144,38 @@ export function App() {
         fetchDetails();
         loadHistory();
       }
-    }, 2000);
+    }, 1000);
 
     return () => clearInterval(interval);
   }, [selectedJobId, currentJob?.status]);
+
+  // Lightweight background validation status refresh after search completes
+  useEffect(() => {
+    if (!selectedJobId || currentJob?.status !== 'completed') return;
+    const hasPendingValidation = results.some(
+      (r) =>
+        !r.metadata_fields?.validation_status ||
+        r.metadata_fields.validation_status === 'PENDING' ||
+        r.metadata_fields.validation_status === 'FAST_VERIFIED'
+    );
+    if (!hasPendingValidation) return;
+
+    let attempts = 0;
+    const valInterval = setInterval(async () => {
+      attempts += 1;
+      try {
+        const res = await api.getResults(selectedJobId);
+        setResults(res);
+      } catch {
+        // Ignore transient validation poll errors
+      }
+      if (attempts >= 6) {
+        clearInterval(valInterval);
+      }
+    }, 2500);
+
+    return () => clearInterval(valInterval);
+  }, [selectedJobId, currentJob?.status, results.length]);
 
   const handleStartResearch = async (params: {
     query: string;
