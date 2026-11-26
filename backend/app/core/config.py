@@ -46,11 +46,12 @@ class Settings(BaseSettings):
     # Discovery AI Request Timeout
     AI_TIMEOUT_SECONDS: float = 25.0
     
-    # CORS
+    # CORS — includes Vercel production URL (update after deploy)
     CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-        "http://localhost:3000"
+        "http://localhost:3000",
+        "https://*.vercel.app",
     ]
 
     model_config = ConfigDict(env_file=".env", extra="ignore")
