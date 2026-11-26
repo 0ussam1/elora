@@ -1,0 +1,203 @@
+"""
+CIA FOIA Electronic Reading Room Connector
+==========================================
+Source: https://www.cia.gov/readingroom/
+Access: Public HTML search — no API key required.
+Interface: GET https://www.foia.cia.gov/search-results?search_api_views_fulltext=QUERY&page=N
+Content: Declassified and FOIA-released CIA documents (CREST archive + thematic collections).
+Limitations:
+  - No official REST API; this connector parses the public HTML search interface.
+  - Full document PDFs are hosted on cia.gov and linked from result pages.
+  - Redacted content is not machine-readable; presence is flagged in metadata.
+  - Rate-limit conservatively to avoid overloading a government server.
+"""
+import httpx
+import re
+import logging
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timezone
+from app.connectors.base import BaseConnector, RawResult
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+SEARCH_URL = "https://www.cia.gov/readingroom/search/site/{query}"
+# The actual search results page (Drupal-based)
+RESULTS_URL = "https://www.cia.gov/readingroom/search/site"
+
+_DOC_URL_RE = re.compile(r'href="(/readingroom/document/[^"]+)"', re.IGNORECASE)
+_TITLE_RE = re.compile(r'<h3[^>]*class="[^"]*title[^"]*"[^>]*>.*?<a[^>]*>(.+?)</a>', re.IGNORECASE | re.DOTALL)
+_DATE_RE = re.compile(r'<span[^>]*class="[^"]*date[^"]*"[^>]*>([^<]+)</span>', re.IGNORECASE)
+_SNIPPET_RE = re.compile(r'<div[^>]*class="[^"]*search-excerpt[^"]*"[^>]*>(.*?)</div>', re.IGNORECASE | re.DOTALL)
+_STRIP_RE = re.compile(r'<[^>]+>')
+
+
+def _strip_tags(html: str) -> str:
+    return re.sub(r'\s+', ' ', _STRIP_RE.sub(' ', html)).strip()
+
+
+class CIAReadingRoomConnector(BaseConnector):
+    """
+    CIA FOIA Electronic Reading Room — public declassified document search.
+    Parses the official CIA Reading Room HTML search interface.
+    No authentication required; search is fully public.
+    """
+    source_id = "cia_reading_room"
+    name = "CIA FOIA Reading Room"
+    category = "intelligence_archives"
+    requires_auth = False
+    supported_content_types = ["document", "declassified_record"]
+
+    BASE_SEARCH = "https://www.cia.gov/readingroom/search/site"
+    DOC_BASE = "https://www.cia.gov"
+    HEADERS = {
+        "User-Agent": "ELORA-Research-Engine/1.0 (academic/open-source; contact: researcher@example.com)",
+        "Accept": "text/html,application/xhtml+xml",
+    }
+
+    def __init__(self):
+        self._last_diagnostic: Optional[Dict[str, Any]] = None
+
+    @property
+    def rate_limit_per_minute(self) -> int:
+        return 10  # Conservative — government server, no official quota
+
+    async def test_connection(self) -> Dict[str, Any]:
+        now_str = datetime.now(timezone.utc).isoformat()
+        try:
+            async with httpx.AsyncClient(timeout=settings.REQUEST_TIMEOUT_SECONDS) as client:
+                resp = await client.get(
+                    self.BASE_SEARCH,
+                    params={"keys": "declassified"},
+                    headers=self.HEADERS,
+                    follow_redirects=True,
+                )
+            if resp.status_code == 200:
+                diag = {
+                    "configured": True, "authorized": True, "connected": True,
+                    "status": "connected",
+                    "message": "CIA Reading Room is reachable (public HTML search)",
+                    "last_checked_at": now_str,
+                }
+            else:
+                diag = {
+                    "configured": True, "authorized": False, "connected": False,
+                    "status": "error",
+                    "message": f"CIA Reading Room returned HTTP {resp.status_code}",
+                    "last_checked_at": now_str,
+                }
+        except Exception as e:
+            diag = {
+                "configured": True, "authorized": False, "connected": False,
+                "status": "error",
+                "message": f"Network error reaching CIA Reading Room: {e}",
+                "last_checked_at": now_str,
+            }
+        self._last_diagnostic = diag
+        return diag
+
+    def check_health(self) -> Dict[str, Any]:
+        if self._last_diagnostic:
+            return {
+                "status": self._last_diagnostic.get("status", "operational"),
+                "auth_status": "not_required",
+                "message": self._last_diagnostic.get("message", ""),
+            }
+        return {
+            "status": "operational",
+            "auth_status": "not_required",
+            "message": "CIA FOIA Reading Room — public declassified document archive (HTML search)",
+        }
+
+    def _parse_results(self, html: str, limit: int) -> List[Dict[str, Any]]:
+        """Extract document entries from the CIA Reading Room search HTML."""
+        docs = []
+        # Find article/result blocks — CIA Drupal uses <li class="search-result"> or similar
+        # We look for <h3> title + link patterns
+        # Pattern: <article ...> blocks or list items containing document links
+        blocks = re.findall(
+            r'<article[^>]*class="[^"]*search-result[^"]*"[^>]*>(.*?)</article>',
+            html, re.IGNORECASE | re.DOTALL
+        )
+        if not blocks:
+            # Fallback: find h3 + a href patterns for document links
+            blocks = re.findall(
+                r'(<h3[^>]*>.*?</h3>.*?(?:<span[^>]*class="[^"]*date[^"]*"[^>]*>.*?</span>)?)',
+                html, re.IGNORECASE | re.DOTALL
+            )
+
+        for block in blocks[:limit]:
+            # Extract link
+            link_m = re.search(r'href="([^"]*readingroom[^"]*)"', block, re.IGNORECASE)
+            if not link_m:
+                link_m = re.search(r'href="(/[^"]+)"', block, re.IGNORECASE)
+            href = link_m.group(1) if link_m else ""
+            url = (self.DOC_BASE + href) if href.startswith("/") else href
+
+            # Extract title
+            title_m = re.search(r'<a[^>]*>([^<]+)</a>', block, re.IGNORECASE)
+            title = _strip_tags(title_m.group(1)) if title_m else "CIA Declassified Document"
+
+            # Extract date
+            date_m = re.search(r'(\d{4}-\d{2}-\d{2}|\w+ \d{1,2},\s*\d{4})', block)
+            pub_at: Optional[datetime] = None
+            date_str = date_m.group(1) if date_m else None
+            if date_str:
+                for fmt in ("%Y-%m-%d", "%B %d, %Y", "%b %d, %Y"):
+                    try:
+                        pub_at = datetime.strptime(date_str, fmt).replace(tzinfo=timezone.utc)
+                        break
+                    except ValueError:
+                        pass
+
+            # Extract snippet
+            snippet_m = re.search(r'<p[^>]*>(.*?)</p>', block, re.IGNORECASE | re.DOTALL)
+            snippet = _strip_tags(snippet_m.group(1))[:500] if snippet_m else None
+
+            if url and title:
+                docs.append({"title": title, "url": url, "pub_at": pub_at, "snippet": snippet})
+
+        return docs
+
+    async def search(self, query: str, limit: int = 15, filters: Optional[Dict[str, Any]] = None) -> List[RawResult]:
+        results: List[RawResult] = []
+        try:
+            async with httpx.AsyncClient(
+                timeout=settings.REQUEST_TIMEOUT_SECONDS,
+                follow_redirects=True,
+            ) as client:
+                resp = await client.get(
+                    self.BASE_SEARCH,
+                    params={"keys": query},
+                    headers=self.HEADERS,
+                )
+            if resp.status_code != 200:
+                logger.warning(f"CIA Reading Room search returned {resp.status_code}")
+                return []
+
+            docs = self._parse_results(resp.text, limit)
+            for d in docs:
+                # Determine if likely a PDF document link
+                is_pdf = d["url"].lower().endswith(".pdf") or "/document/" in d["url"]
+                results.append(RawResult(
+                    source_name="cia_reading_room",
+                    source_item_id=d["url"].split("/")[-1] or d["url"],
+                    title=d["title"],
+                    content_snippet=d["snippet"],
+                    source_url=d["url"],
+                    author=None,
+                    published_at=d["pub_at"],
+                    content_type="declassified_record",
+                    engagement_metrics={},
+                    metadata={
+                        "agency": "CIA",
+                        "archive": "FOIA Electronic Reading Room",
+                        "document_type": "FOIA_declassified",
+                        "is_pdf": is_pdf,
+                        "access": "public",
+                        "classification_status": "declassified",
+                    },
+                ))
+        except Exception as e:
+            logger.error(f"CIA Reading Room search failed: {e}")
+        return results

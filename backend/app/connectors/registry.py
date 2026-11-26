@@ -19,6 +19,13 @@ from app.connectors.zenodo import ZenodoConnector
 from app.connectors.discourse import DiscourseConnector
 from app.connectors.lemmy import LemmyConnector
 from app.connectors.mastodon import MastodonConnector
+# Intelligence & Investigative Archives — 6 connectors
+from app.connectors.cia_reading_room import CIAReadingRoomConnector
+from app.connectors.fbi_vault import FBIVaultConnector
+from app.connectors.nsa_archive import NSAArchiveConnector
+from app.connectors.nat_sec_archive import NatSecArchiveConnector
+from app.connectors.nara import NARAConnector
+from app.connectors.icij_offshore import ICIJOffshoreLeaksConnector
 
 CONNECTOR_REGISTRY: Dict[str, BaseConnector] = {
     "hackernews": HackerNewsConnector(),
@@ -40,6 +47,13 @@ CONNECTOR_REGISTRY: Dict[str, BaseConnector] = {
     "discourse": DiscourseConnector(),
     "lemmy": LemmyConnector(),
     "mastodon": MastodonConnector(),
+    # Intelligence & Investigative Archives
+    "cia_reading_room": CIAReadingRoomConnector(),
+    "fbi_vault": FBIVaultConnector(),
+    "nsa_archive": NSAArchiveConnector(),
+    "nat_sec_archive": NatSecArchiveConnector(),
+    "nara": NARAConnector(),
+    "icij_offshore": ICIJOffshoreLeaksConnector(),
 }
 
 def get_connector(source_id: str) -> BaseConnector | None:

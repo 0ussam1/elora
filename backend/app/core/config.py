@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     # CORE Open Access API (Required key — free tier at https://core.ac.uk/services/api)
     CORE_API_KEY: str | None = None
 
+    # ── Intelligence & Investigative Archives ──────────────────────────────
+    # NARA National Archives Catalog API (free — email Catalog_API@nara.gov)
+    NARA_API_KEY: str | None = None
+
     # Crossref API (Polite pool contact email)
     CROSSREF_MAILTO: str | None = "researcher@example.com"
 

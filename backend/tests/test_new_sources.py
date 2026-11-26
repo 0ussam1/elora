@@ -406,8 +406,8 @@ class TestRegistryIntegration:
 
     def test_total_source_count(self):
         from app.connectors.registry import CONNECTOR_REGISTRY
-        # 12 existing + 6 new = 18
-        assert len(CONNECTOR_REGISTRY) == 18
+        # 12 existing + 6 research sources + 6 intelligence archives = 24
+        assert len(CONNECTOR_REGISTRY) == 24
 
     def test_list_all_sources_includes_new(self):
         from app.connectors.registry import list_all_sources
