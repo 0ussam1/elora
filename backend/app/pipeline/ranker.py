@@ -22,6 +22,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from app.models.database import ResearchResult
 from app.pipeline.query_analyzer import QueryAnalysis, QueryAnalyzer, tokenize_multilingual
+from app.pipeline.semantic_engine import SemanticEngine, stem_token, _CLUSTER_MEMBERS
 
 MIN_RELEVANCE_THRESHOLD = 0.25
 
@@ -113,12 +114,21 @@ class Ranker:
         penalty_mult = 1.0
         has_mismatch = False
 
+        # Common entity aliases (e.g. gta <-> grand theft auto)
+        ENTITY_ALIASES: Dict[str, List[str]] = {
+            "gta": ["grand theft auto"],
+            "grand theft auto": ["gta"],
+            "cpython": ["python"],
+        }
+
         for ev in analysis.entities:
             ent = ev.entity
             ver = ev.version
             roman_ver = _ARABIC_TO_ROMAN.get(ver)
 
-            ent_present = bool(re.search(rf"\b{re.escape(ent)}\b", text_lower))
+            # Check entity base and any known aliases
+            cand_entities = [ent] + ENTITY_ALIASES.get(ent, [])
+            ent_present = any(bool(re.search(rf"\b{re.escape(e)}\b", text_lower)) for e in cand_entities)
             if not ent_present:
                 continue
 
@@ -127,8 +137,8 @@ class Ranker:
                 ver_patterns.append(re.escape(roman_ver))
             ver_regex = "|".join(ver_patterns)
 
-            title_exact = bool(re.search(rf"\b{re.escape(ent)}[\s\-_]*(?:{ver_regex})\b", title_lower))
-            desc_exact = bool(re.search(rf"\b{re.escape(ent)}[\s\-_]*(?:{ver_regex})\b", desc_lower))
+            title_exact = any(bool(re.search(rf"\b{re.escape(e)}[\s\-_]*(?:{ver_regex})\b", title_lower)) for e in cand_entities)
+            desc_exact = any(bool(re.search(rf"\b{re.escape(e)}[\s\-_]*(?:{ver_regex})\b", desc_lower)) for e in cand_entities)
 
             if title_exact or desc_exact:
                 matched_entities.append(ev.full_phrase)
@@ -142,10 +152,12 @@ class Ranker:
                     total_ev_score += 0.80
                     reasons.append(f"Exact entity & version match in description: {ev.full_phrase}")
             else:
-                other_versions = re.findall(
-                    rf"\b{re.escape(ent)}[\s\-_]*(v?\d+(?:\.\d+){{0,2}}|ii|iii|iv|v|vi|vii|viii)\b",
-                    text_lower,
-                )
+                other_versions = []
+                for e in cand_entities:
+                    other_versions.extend(re.findall(
+                        rf"\b{re.escape(e)}[\s\-_]*(v?\d+(?:\.\d+){{0,2}}|ii|iii|iv|v|vi|vii|viii)\b",
+                        text_lower,
+                    ))
                 other_clean = {
                     _ROMAN_TO_ARABIC.get(v.lstrip("v"), v.lstrip("v"))
                     for v in other_versions
@@ -244,11 +256,25 @@ class Ranker:
             tag_str = (" ".join(str(t) for t in tags) if isinstance(tags, list) else str(tags)).lower()
             full_lower = f"{title_lower} {desc_lower} {tag_str}".strip()
 
+            # High-accuracy Semantic & Morphological Engine Similarity
+            deep_semantic_sim = SemanticEngine.compute_semantic_similarity(
+                query=qa.normalized_query,
+                doc_text=full_lower,
+                lang=qa.language,
+                query_stems=qa.stems,
+                active_clusters=qa.semantic_clusters
+            )
+
             # Dimension 1: Title Relevance [0, 1]
             title_tokens = set(cls._extract_tokens(item.title or ""))
             title_overlap = len(orig_q_tokens & title_tokens) / max(len(orig_q_tokens), 1)
             title_phrase_bonus = 0.15 if (len(phrase_clean) >= 4 and phrase_clean in title_lower) else 0.0
             title_score = min(title_overlap + title_phrase_bonus, 1.0)
+
+            # Check semantic cluster coverage in title specifically (e.g. if title discusses the key concepts)
+            if qa.semantic_clusters:
+                title_cluster_score = sum(1 for cid in qa.semantic_clusters if any(p in title_lower for p in _CLUSTER_MEMBERS.get(cid, set()))) / len(qa.semantic_clusters)
+                title_score = max(title_score, title_cluster_score * 0.85)
 
             # Dimension 2: Description / Content Relevance [0, 1]
             # Distinguish unavailable metadata from checked-and-irrelevant content
@@ -270,14 +296,19 @@ class Ranker:
                         qualifier_hits += 1
                 qualifier_ratio = qualifier_hits / len(qa.qualifiers)
             else:
-                qualifier_ratio = 1.0  # No extra qualifier required
+                # If query has no qualifiers, topic score is directly tied to observed match (not free 1.0)
+                qualifier_ratio = 1.0 if (title_overlap > 0 or desc_overlap > 0 or deep_semantic_sim > 0.25) else 0.0
 
             tag_tokens = set(cls._extract_tokens(tag_str))
             tag_overlap = len(q_tokens_set & tag_tokens) / max(len(q_tokens_set), 1) if tag_tokens else 0.0
-            topic_score = min((qualifier_ratio * 0.75) + (tag_overlap * 0.25) + (0.25 if not qa.qualifiers and title_overlap >= 0.5 else 0.0), 1.0)
+            if qa.qualifiers:
+                topic_score = min((qualifier_ratio * 0.75) + (tag_overlap * 0.25), 1.0)
+            else:
+                topic_score = min((qualifier_ratio * 0.50) + (tag_overlap * 0.50) + (0.30 if title_overlap >= 0.4 else 0.0), 1.0)
 
             # Dimension 4: Blended Semantic + Lexical Score [0, 1]
-            lexical_semantic_score = (sem_score * 0.50) + (bm25_score * 0.50)
+            # Incorporates calibrated TF-IDF, BM25, AND Deep Semantic Concept/Morphological Similarity
+            lexical_semantic_score = (sem_score * 0.30) + (bm25_score * 0.30) + (deep_semantic_sim * 0.40)
 
             # Dimension 5: Entity & Version Accuracy + Mismatch Penalty
             ev_score, ev_penalty, matched_entities, ev_reasons, has_mismatch = cls._check_entity_version_signals(
@@ -303,29 +334,36 @@ class Ranker:
 
             # Calibrated Weighted Scoring Model:
             # - If query has explicit entities (e.g. GTA 6, Python 3.13), entity/version accuracy has 0.30 weight
-            # - Otherwise weights distribute across title (0.30), description (0.30), semantic+BM25 (0.25), topic (0.15)
+            # - If query is purely conceptual (no entity), semantic/concept relevance has substantial weight
             if qa.entities:
                 raw_score = (
-                    (title_score * 0.22)
-                    + (desc_score * 0.24)
+                    (title_score * 0.20)
+                    + (desc_score * 0.22)
                     + (ev_score * 0.30)
-                    + (topic_score * 0.12)
-                    + (lexical_semantic_score * 0.12)
-                    + (0.12 if cross_lingual_match else 0.0)
+                    + (topic_score * 0.10)
+                    + (lexical_semantic_score * 0.18)
+                    + (0.10 if cross_lingual_match else 0.0)
                     + intent_bonus
                 )
-                # If query has qualifiers (e.g. "release date") and entity matched, reward full qualifier coverage
                 if qa.qualifiers and matched_entities and qualifier_hits == 0:
-                    raw_score *= 0.78  # General GTA 6 article for "GTA 6 release date" stays moderate-high (~65-75%) instead of 95%
+                    raw_score *= 0.78
             else:
+                # Conceptual / semantic query (e.g. "How does AI affect employment?")
+                # High deep_semantic_sim enables high scores even with zero literal title overlap
                 raw_score = (
-                    (title_score * 0.30)
-                    + (desc_score * 0.28)
-                    + (lexical_semantic_score * 0.25)
-                    + (topic_score * 0.17)
-                    + (0.18 if cross_lingual_match else 0.0)
+                    (title_score * 0.20)
+                    + (desc_score * 0.20)
+                    + (lexical_semantic_score * 0.35)
+                    + (deep_semantic_sim * 0.20)
+                    + (topic_score * 0.15)
+                    + (0.15 if cross_lingual_match else 0.0)
                     + intent_bonus
                 )
+
+            # False-Positive Guard (Part 6):
+            # If a document has near-zero lexical overlap AND near-zero semantic overlap, strictly penalize
+            if title_score < 0.10 and desc_score < 0.10 and deep_semantic_sim < 0.15 and not cross_lingual_match:
+                raw_score *= 0.15  # Demote false positive radically below threshold
 
             # Apply entity/version mismatch penalty
             final_score = round(min(max(raw_score * ev_penalty, 0.0), 1.0), 3)

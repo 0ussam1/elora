@@ -149,6 +149,8 @@ class QueryAnalysis:
     qualifiers: List[str] = field(default_factory=list)
     multilingual_expansions: List[str] = field(default_factory=list)
     main_subject: str = ""
+    stems: List[str] = field(default_factory=list)
+    semantic_clusters: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict:
         return {
@@ -166,6 +168,8 @@ class QueryAnalysis:
             "qualifiers": self.qualifiers,
             "multilingual_expansions": self.multilingual_expansions,
             "main_subject": self.main_subject,
+            "stems": self.stems,
+            "semantic_clusters": self.semantic_clusters,
         }
 
 
@@ -287,6 +291,17 @@ class QueryAnalyzer:
         # 6. Main subject (query minus intent/time boilerplate)
         main_subject = entities[0].full_phrase if entities else clean_q
 
+        # 7. Semantic Clusters & Morphological Stems via SemanticEngine
+        from app.pipeline.semantic_engine import SemanticEngine, stem_token
+        stems = [stem_token(t, language) for t in tokens]
+        active_clusters = SemanticEngine.identify_query_clusters(clean_q)
+
+        # Merge cluster expansions into multilingual expansions without duplicates
+        cluster_expansions = SemanticEngine.expand_query(clean_q, language)["semantic_expansions"]
+        for c_exp in cluster_expansions:
+            if c_exp not in expansions and c_exp.lower() != lower_q:
+                expansions.append(c_exp)
+
         analysis = QueryAnalysis(
             original_query=query,
             normalized_query=clean_q,
@@ -299,6 +314,8 @@ class QueryAnalyzer:
             qualifiers=qualifiers,
             multilingual_expansions=expansions,
             main_subject=main_subject,
+            stems=stems,
+            semantic_clusters=active_clusters,
         )
         query_analysis_cache.set(cache_key, analysis)
         return analysis
