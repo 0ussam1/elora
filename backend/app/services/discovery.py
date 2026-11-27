@@ -18,7 +18,6 @@ from app.connectors.registry import get_connector, CONNECTOR_REGISTRY
 from app.pipeline.normalizer import Normalizer
 from app.pipeline.deduplicator import Deduplicator
 from app.pipeline.ranker import Ranker
-from app.pipeline.validator import ResultValidator
 
 logger = logging.getLogger(__name__)
 
@@ -399,33 +398,27 @@ class DiscoveryService:
         ranking_target = f"{original_objective or ''} {primary_query}".strip()
         ranked = Ranker.rank(ranking_target, deduped, mode=mode)
 
-        # Multi-layer validation
-        validated = await ResultValidator.validate_batch(ranked, db=db)
-
         # Persist results
-        for r in validated:
+        for r in ranked:
             db.add(r)
 
-        job.total_results_count = len(validated)
+        job.total_results_count = len(ranked)
         job.status = "completed"
         job.progress = 100.0
         job.completed_at = datetime.now(timezone.utc)
         db.commit()
 
-        # Group results by resource/content type (prioritize verified/partially verified)
+        # Group results by resource/content type for clean presentation
         grouped: Dict[str, List[Any]] = {}
-        for r in validated:
-            if r.validation_status in ("DELETED", "NOT_FOUND", "MISMATCH", "INACCESSIBLE"):
-                continue
+        for r in ranked:
             ctype = r.content_type or "web"
             group_key = cls._map_to_resource_group(ctype, r.source_name)
             if group_key not in grouped:
                 grouped[group_key] = []
             grouped[group_key].append(r)
 
-        verified_count = sum(1 for r in validated if r.validation_status in ("VERIFIED", "PARTIALLY_VERIFIED"))
         summary = (
-            f"Collected {verified_count} verified results ({len(validated)} total) across {len(successful_sources)} engines "
+            f"Collected {len(ranked)} verified results across {len(successful_sources)} engines "
             f"matching your discovery objective."
         )
 

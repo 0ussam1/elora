@@ -13,15 +13,6 @@ export interface ResearchJob {
   completed_at?: string;
 }
 
-export type ValidationStatus =
-  | 'VERIFIED'
-  | 'PARTIALLY_VERIFIED'
-  | 'INACCESSIBLE'
-  | 'DELETED'
-  | 'NOT_FOUND'
-  | 'MISMATCH'
-  | 'UNCHECKED';
-
 export interface ResearchResult {
   id: string;
   job_id: string;
@@ -39,15 +30,6 @@ export interface ResearchResult {
   relevance_score: number;
   is_duplicate: boolean;
   duplicate_of?: string;
-  validation_status?: ValidationStatus;
-  canonical_url?: string;
-  final_url?: string;
-  http_status?: number;
-  validation_method?: string;
-  validation_reason?: string;
-  validated_at?: string;
-  content_extraction_status?: string;
-  content_availability_status?: string;
 }
 
 export interface SourceInfo {

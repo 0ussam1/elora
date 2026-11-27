@@ -26,15 +26,6 @@ class ResearchResultResponse(BaseModel):
     relevance_score: float = 0.0
     is_duplicate: bool = False
     duplicate_of: Optional[str] = None
-    validation_status: str = "UNCHECKED"
-    canonical_url: Optional[str] = None
-    final_url: Optional[str] = None
-    http_status: Optional[int] = None
-    validation_method: Optional[str] = None
-    validation_reason: Optional[str] = None
-    validated_at: Optional[datetime] = None
-    content_extraction_status: Optional[str] = "snippet_only"
-    content_availability_status: Optional[str] = "unknown"
 
     model_config = ConfigDict(from_attributes=True)
 

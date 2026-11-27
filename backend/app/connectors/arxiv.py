@@ -14,12 +14,12 @@ class ArxivConnector(BaseConnector):
     requires_auth = False
     supported_content_types = ["paper", "preprint"]
 
-    BASE_URL = "http://export.arxiv.org/api/query"
+    BASE_URL = "https://export.arxiv.org/api/query"
 
     async def search(self, query: str, limit: int = 15, filters: Optional[Dict[str, Any]] = None) -> List[RawResult]:
         results: List[RawResult] = []
         try:
-            async with httpx.AsyncClient(timeout=12.0) as client:
+            async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
                 params = {
                     "search_query": f"all:{query}",
                     "start": 0,
