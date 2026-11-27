@@ -74,11 +74,13 @@ class TTLCache(Generic[T]):
             }
 
 
-# ── Four Separate Caches ──────────────────────────────────────────────────────
+# ── Six Separate Caches ───────────────────────────────────────────────────────
 search_cache: TTLCache[list] = TTLCache("search_results", max_size=512, default_ttl=300)
 provider_meta_cache: TTLCache[dict] = TTLCache("provider_metadata", max_size=128, default_ttl=300)
 url_validation_cache: TTLCache[dict] = TTLCache("url_validation", max_size=2048, default_ttl=1800)
 deep_validation_cache: TTLCache[dict] = TTLCache("deep_validation", max_size=512, default_ttl=3600)
+query_analysis_cache: TTLCache[Any] = TTLCache("query_analysis", max_size=512, default_ttl=1800)
+fingerprint_cache: TTLCache[str] = TTLCache("duplicate_fingerprints", max_size=4096, default_ttl=1800)
 
 
 def get_all_cache_stats() -> Dict[str, Any]:
@@ -87,6 +89,8 @@ def get_all_cache_stats() -> Dict[str, Any]:
         "provider_meta_cache": provider_meta_cache.stats(),
         "url_validation_cache": url_validation_cache.stats(),
         "deep_validation_cache": deep_validation_cache.stats(),
+        "query_analysis_cache": query_analysis_cache.stats(),
+        "fingerprint_cache": fingerprint_cache.stats(),
     }
 
 
@@ -95,3 +99,5 @@ def clear_all_caches() -> None:
     provider_meta_cache.clear()
     url_validation_cache.clear()
     deep_validation_cache.clear()
+    query_analysis_cache.clear()
+    fingerprint_cache.clear()

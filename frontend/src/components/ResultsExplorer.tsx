@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { ExternalLink, Filter, Download, User, Calendar } from 'lucide-react';
+import { ExternalLink, Filter, Download, User, Calendar, ThumbsUp, ThumbsDown, Flag } from 'lucide-react';
 import type { ResearchResult } from '../types';
+import { api } from '../services/api';
 
 const VALIDATION_BADGE_MAP: Record<string, { label: string; cls: string }> = {
   VERIFIED: { label: 'Verified', cls: 'bg-emerald-950 text-emerald-400 border-emerald-800/60' },
@@ -23,11 +24,28 @@ interface ResultsExplorerProps {
 export const ResultsExplorer: React.FC<ResultsExplorerProps> = ({ results, onExport }) => {
   const [filterSource, setFilterSource] = useState('all');
   const [filterType, setFilterType] = useState('all');
+  const [filterLanguage, setFilterLanguage] = useState('all');
+  const [filterVerification, setFilterVerification] = useState('all');
+  const [academicOnly, setAcademicOnly] = useState(false);
+  const [openAccessOnly, setOpenAccessOnly] = useState(false);
   const [minRelevance] = useState(0);
   const [searchKeyword, setSearchKeyword] = useState('');
-  const [sortBy, setSortBy] = useState<'relevance' | 'date'>('relevance');
+  const [sortBy, setSortBy] = useState<'newest' | 'relevant' | 'oldest'>('newest');
+  const [feedbackSent, setFeedbackSent] = useState<Record<string, string>>({});
 
-  // Available unique sources and types (memoized to avoid unnecessary re-computation)
+  const handleFeedback = async (
+    item: ResearchResult,
+    type: 'relevant' | 'irrelevant' | 'wrong_version' | 'broken_link'
+  ) => {
+    try {
+      await api.submitFeedback(item.job_id, item.id, type);
+      setFeedbackSent(prev => ({ ...prev, [item.id]: type }));
+    } catch {
+      // Ignore silent feedback failure
+    }
+  };
+
+  // Available unique sources, types, and languages (memoized)
   const uniqueSources = useMemo(
     () => Array.from(new Set(results.map(r => r.source_name))),
     [results]
@@ -36,22 +54,49 @@ export const ResultsExplorer: React.FC<ResultsExplorerProps> = ({ results, onExp
     () => Array.from(new Set(results.map(r => r.content_type))),
     [results]
   );
+  const uniqueLanguages = useMemo(
+    () => Array.from(new Set(results.map(r => r.metadata_fields?.language).filter(Boolean) as string[])),
+    [results]
+  );
 
-  const filtered = useMemo(() => results.filter(r => {
-    if (filterSource !== 'all' && r.source_name !== filterSource) return false;
-    if (filterType !== 'all' && r.content_type !== filterType) return false;
-    if (r.relevance_score < minRelevance) return false;
-    if (searchKeyword.trim()) {
-      const matchText = `${r.title} ${r.content_snippet || ''}`.toLowerCase();
-      if (!matchText.includes(searchKeyword.toLowerCase())) return false;
+  const filtered = useMemo(() => {
+    const items = results.filter(r => {
+      const meta = r.metadata_fields || {};
+      if (filterSource !== 'all' && r.source_name !== filterSource) return false;
+      if (filterType !== 'all' && r.content_type !== filterType) return false;
+      if (filterLanguage !== 'all' && meta.language !== filterLanguage) return false;
+      if (filterVerification !== 'all' && meta.validation_status !== filterVerification) return false;
+      if (academicOnly && !meta.is_academic) return false;
+      if (openAccessOnly && !meta.is_open_access) return false;
+      if (r.relevance_score < minRelevance) return false;
+      if (searchKeyword.trim()) {
+        const matchText = `${r.title} ${r.content_snippet || ''}`.toLowerCase();
+        if (!matchText.includes(searchKeyword.toLowerCase())) return false;
+      }
+      return true;
+    });
+
+    if (sortBy === 'relevant') {
+      return [...items].sort((a, b) => {
+        if (b.relevance_score !== a.relevance_score) return b.relevance_score - a.relevance_score;
+        const dA = a.published_at ? new Date(a.published_at).getTime() : 0;
+        const dB = b.published_at ? new Date(b.published_at).getTime() : 0;
+        return dB - dA;
+      });
     }
-    return true;
-  }).sort((a, b) => {
-    if (sortBy === 'relevance') return b.relevance_score - a.relevance_score;
-    const dateA = a.published_at ? new Date(a.published_at).getTime() : 0;
-    const dateB = b.published_at ? new Date(b.published_at).getTime() : 0;
-    return dateB - dateA;
-  }), [results, filterSource, filterType, minRelevance, searchKeyword, sortBy]);
+
+    // Deterministic chronological sort: undated records strictly AFTER dated records
+    const dated = items.filter(x => Boolean(x.published_at));
+    const undated = items.filter(x => !x.published_at);
+    dated.sort((a, b) => {
+      const dA = new Date(a.published_at!).getTime();
+      const dB = new Date(b.published_at!).getTime();
+      if (dA !== dB) return sortBy === 'oldest' ? dA - dB : dB - dA;
+      return b.relevance_score - a.relevance_score;
+    });
+    undated.sort((a, b) => b.relevance_score - a.relevance_score);
+    return [...dated, ...undated];
+  }, [results, filterSource, filterType, filterLanguage, filterVerification, academicOnly, openAccessOnly, minRelevance, searchKeyword, sortBy]);
 
   return (
     <div className="space-y-4">
@@ -85,6 +130,49 @@ export const ResultsExplorer: React.FC<ResultsExplorerProps> = ({ results, onExp
             ))}
           </select>
 
+          <select
+            value={filterLanguage}
+            onChange={(e) => setFilterLanguage(e.target.value)}
+            className="bg-slate-950 border border-slate-800 text-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none uppercase"
+          >
+            <option value="all">All Languages</option>
+            {uniqueLanguages.map(lang => (
+              <option key={lang} value={lang}>{lang}</option>
+            ))}
+          </select>
+
+          <select
+            value={filterVerification}
+            onChange={(e) => setFilterVerification(e.target.value)}
+            className="bg-slate-950 border border-slate-800 text-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none"
+          >
+            <option value="all">All Verification</option>
+            <option value="VERIFIED">Verified</option>
+            <option value="LIGHT_VERIFIED">Link OK</option>
+            <option value="FAST_VERIFIED">Fast Check</option>
+            <option value="BROKEN_LINK">Broken Link</option>
+          </select>
+
+          <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer select-none px-1.5">
+            <input
+              type="checkbox"
+              checked={academicOnly}
+              onChange={(e) => setAcademicOnly(e.target.checked)}
+              className="accent-sky-500 rounded"
+            />
+            <span>Academic</span>
+          </label>
+
+          <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer select-none px-1.5">
+            <input
+              type="checkbox"
+              checked={openAccessOnly}
+              onChange={(e) => setOpenAccessOnly(e.target.checked)}
+              className="accent-emerald-500 rounded"
+            />
+            <span>Open Access</span>
+          </label>
+
           <input
             type="text"
             placeholder="Search within results..."
@@ -98,11 +186,12 @@ export const ResultsExplorer: React.FC<ResultsExplorerProps> = ({ results, onExp
         <div className="flex items-center gap-2">
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
+            onChange={(e) => setSortBy(e.target.value as 'newest' | 'relevant' | 'oldest')}
             className="bg-slate-950 border border-slate-800 text-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
           >
-            <option value="relevance">Sort: Highest Relevance</option>
-            <option value="date">Sort: Most Recent</option>
+            <option value="newest">Sort: Newest First</option>
+            <option value="relevant">Sort: Most Relevant</option>
+            <option value="oldest">Sort: Oldest First</option>
           </select>
 
           <button
@@ -139,13 +228,23 @@ export const ResultsExplorer: React.FC<ResultsExplorerProps> = ({ results, onExp
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/50">
                         {item.source_name}
                       </span>
                       <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-800 text-slate-400 capitalize">
                         {item.content_type}
                       </span>
+                      {item.metadata_fields?.language && (
+                        <span className="text-[10px] font-medium uppercase px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-300 border border-slate-700/60">
+                          {item.metadata_fields.language}
+                        </span>
+                      )}
+                      {item.metadata_fields?.source_quality_label && (
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-indigo-950/60 text-indigo-300 border border-indigo-800/40">
+                          {item.metadata_fields.source_quality_label}
+                        </span>
+                      )}
                       {(() => {
                         const vStatus = item.metadata_fields?.validation_status;
                         const badge = vStatus ? VALIDATION_BADGE_MAP[vStatus] : undefined;
@@ -187,35 +286,84 @@ export const ResultsExplorer: React.FC<ResultsExplorerProps> = ({ results, onExp
                   {item.content_snippet || 'No excerpt available.'}
                 </p>
 
+                {/* Match Evidence & Provenance */}
+                {Array.isArray(item.metadata_fields?.match_reasons) && item.metadata_fields.match_reasons.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400">
+                    <span className="text-slate-500 font-medium">Match signals:</span>
+                    {item.metadata_fields.match_reasons.map((reason: string, rIdx: number) => (
+                      <span key={rIdx} className="px-1.5 py-0.5 rounded bg-slate-800/60 text-slate-300 border border-slate-700/40">
+                        {reason}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 {/* Meta details */}
-                <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/60">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 pt-1 border-t border-slate-800/60">
                   <div className="flex items-center gap-3">
                     {item.author && (
                       <span className="flex items-center gap-1 text-slate-300">
                         <User className="w-3 h-3 text-slate-500" /> {item.author}
                       </span>
                     )}
-                    {item.published_at && (
+                    {item.published_at ? (
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3 h-3 text-slate-500" /> {new Date(item.published_at).toLocaleDateString()}
                       </span>
+                    ) : (
+                      <span className="text-slate-500 italic">Date unknown</span>
                     )}
                   </div>
 
-                  {/* Engagement indicators */}
-                  {item.engagement_metrics && Object.keys(item.engagement_metrics).length > 0 && (
-                    <div className="flex items-center gap-2 text-slate-400">
-                      {item.engagement_metrics.points !== undefined && (
-                        <span>▲ {item.engagement_metrics.points} pts</span>
-                      )}
-                      {item.engagement_metrics.comments !== undefined && (
-                        <span>💬 {item.engagement_metrics.comments} comments</span>
-                      )}
-                      {item.engagement_metrics.reactions_total !== undefined && (
-                        <span>👍 {item.engagement_metrics.reactions_total} reactions</span>
+                  <div className="flex items-center gap-3">
+                    {/* Engagement indicators */}
+                    {item.engagement_metrics && Object.keys(item.engagement_metrics).length > 0 && (
+                      <div className="flex items-center gap-2 text-slate-400">
+                        {item.engagement_metrics.points !== undefined && (
+                          <span>▲ {item.engagement_metrics.points} pts</span>
+                        )}
+                        {item.engagement_metrics.comments !== undefined && (
+                          <span>💬 {item.engagement_metrics.comments} comments</span>
+                        )}
+                        {item.engagement_metrics.reactions_total !== undefined && (
+                          <span>👍 {item.engagement_metrics.reactions_total} reactions</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Lightweight Feedback Controls */}
+                    <div className="flex items-center gap-1.5">
+                      {feedbackSent[item.id] ? (
+                        <span className="text-[10px] text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-950/60 border border-emerald-800/40">
+                          Feedback: {feedbackSent[item.id].replace('_', ' ')}
+                        </span>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleFeedback(item, 'relevant')}
+                            title="Mark Relevant"
+                            className="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-emerald-400 transition cursor-pointer"
+                          >
+                            <ThumbsUp className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => handleFeedback(item, 'irrelevant')}
+                            title="Mark Irrelevant"
+                            className="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-rose-400 transition cursor-pointer"
+                          >
+                            <ThumbsDown className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => handleFeedback(item, 'wrong_version')}
+                            title="Report Wrong Version / Issue"
+                            className="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-amber-400 transition cursor-pointer"
+                          >
+                            <Flag className="w-3 h-3" />
+                          </button>
+                        </>
                       )}
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
             );

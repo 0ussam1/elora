@@ -9,13 +9,15 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
-from app.models.database import ResearchJob, ResearchResult, ResearchReport, CollectionLog
+from app.models.database import ResearchJob, ResearchResult, ResearchReport, CollectionLog, ResultFeedback
 from app.schemas.research import (
     ResearchJobCreate, ResearchJobResponse, ResearchResultResponse,
-    ResearchReportResponse, SourceInfo, CollectionLogResponse, SourceDiagnosticResponse
+    ResearchReportResponse, SourceInfo, CollectionLogResponse, SourceDiagnosticResponse,
+    ResultFeedbackCreate, ResultFeedbackResponse
 )
 from app.connectors.registry import list_all_sources, get_connector
 from app.services.coordinator import ResearchCoordinator
+from app.pipeline.ranker import Ranker
 
 router = APIRouter()
 
@@ -135,8 +137,15 @@ def get_research_results(
     job_id: str,
     source: Optional[str] = None,
     content_type: Optional[str] = None,
+    language: Optional[str] = None,
+    verification_status: Optional[str] = None,
+    academic_only: bool = False,
+    open_access_only: bool = False,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     min_relevance: Optional[float] = 0.0,
     include_duplicates: bool = False,
+    sort_by: str = Query("newest", pattern="^(newest|relevant|oldest)$"),
     limit: int = 50,
     offset: int = 0,
     db: Session = Depends(get_db)
@@ -148,11 +157,72 @@ def get_research_results(
         query = query.filter(ResearchResult.source_name == source)
     if content_type:
         query = query.filter(ResearchResult.content_type == content_type)
-    if min_relevance > 0:
+    if min_relevance and min_relevance > 0:
         query = query.filter(ResearchResult.relevance_score >= min_relevance)
 
-    results = query.order_by(ResearchResult.relevance_score.desc()).offset(offset).limit(limit).all()
-    return results
+    if date_from:
+        try:
+            dt_from = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+            query = query.filter(ResearchResult.published_at >= dt_from)
+        except Exception:
+            pass
+    if date_to:
+        try:
+            dt_to = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+            query = query.filter(ResearchResult.published_at <= dt_to)
+        except Exception:
+            pass
+
+    all_rows = query.all()
+
+    # Apply metadata-based filters cleanly in memory (SQLite JSON portable)
+    filtered: List[ResearchResult] = []
+    for r in all_rows:
+        meta = r.metadata_fields or {}
+        if language and meta.get("language") != language:
+            continue
+        if verification_status and meta.get("validation_status") != verification_status:
+            continue
+        if academic_only and not meta.get("is_academic", False):
+            continue
+        if open_access_only and not meta.get("is_open_access", False):
+            continue
+        filtered.append(r)
+
+    sorted_results = Ranker.sort_results(filtered, sort_by=sort_by)
+    return sorted_results[offset : offset + limit]
+
+
+@router.post("/research/{job_id}/results/{result_id}/feedback", response_model=ResultFeedbackResponse)
+def submit_result_feedback(
+    job_id: str,
+    result_id: str,
+    payload: ResultFeedbackCreate,
+    db: Session = Depends(get_db)
+):
+    """Store user feedback for offline evaluation without corrupting global ranking."""
+    result = db.query(ResearchResult).filter(
+        ResearchResult.id == result_id,
+        ResearchResult.job_id == job_id
+    ).first()
+    if not result:
+        raise HTTPException(status_code=404, detail="Research result not found")
+
+    fb = ResultFeedback(
+        job_id=job_id,
+        result_id=result_id,
+        feedback_type=payload.feedback_type,
+        comment=payload.comment,
+    )
+    db.add(fb)
+    db.commit()
+    db.refresh(fb)
+    return fb
+
+
+@router.get("/research/{job_id}/feedback", response_model=List[ResultFeedbackResponse])
+def get_job_feedback(job_id: str, db: Session = Depends(get_db)):
+    return db.query(ResultFeedback).filter(ResultFeedback.job_id == job_id).order_by(ResultFeedback.created_at.desc()).all()
 
 @router.get("/research/{job_id}/logs", response_model=List[CollectionLogResponse])
 def get_collection_logs(job_id: str, db: Session = Depends(get_db)):

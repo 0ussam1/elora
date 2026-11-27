@@ -103,3 +103,14 @@ class CollectionLog(Base):
     created_at = Column(DateTime, default=_utcnow)
 
     job = relationship("ResearchJob", back_populates="logs")
+
+
+class ResultFeedback(Base):
+    __tablename__ = "result_feedback"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String(36), ForeignKey("research_jobs.id"), nullable=False, index=True)
+    result_id = Column(String(64), ForeignKey("research_results.id"), nullable=False, index=True)
+    feedback_type = Column(String(50), nullable=False)  # relevant, irrelevant, wrong_version, duplicate, broken_link, incorrect_date, misleading_description
+    comment = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)

@@ -14,6 +14,7 @@ from app.models.database import ResearchJob, ResearchResult, CollectionLog
 from app.connectors.registry import get_connector
 from app.pipeline.normalizer import Normalizer
 from app.pipeline.deduplicator import Deduplicator
+from app.pipeline.query_analyzer import QueryAnalyzer
 from app.pipeline.ranker import Ranker
 from app.pipeline.report_generator import ReportGenerator
 from app.services.validator import ValidationService
@@ -39,6 +40,9 @@ class ResearchCoordinator:
         job.status = "running"
         job.progress = 10.0
         db.commit()
+
+        # Analyze query intent, entities, versions, language & multilingual concepts
+        query_analysis = QueryAnalyzer.analyze(job.query)
 
         target_sources = job.selected_sources
         if not target_sources:
@@ -119,7 +123,7 @@ class ResearchCoordinator:
 
                 # Progressive rank & flush so frontend sees fast providers immediately
                 if new_batch:
-                    Ranker.rank(job.query, new_batch, mode=job.mode)
+                    Ranker.rank(job.query, new_batch, mode=job.mode, analysis=query_analysis)
                     db.add_all(new_batch)
 
             job.progress = round(20.0 + (completed_sources / total_sources) * 55.0, 1)
@@ -128,7 +132,7 @@ class ResearchCoordinator:
 
         # Final Deduplication & Ranking across all collected results
         deduped = Deduplicator.deduplicate(all_normalized_results)
-        ranked = Ranker.rank(job.query, deduped, mode=job.mode)
+        ranked = Ranker.rank(job.query, deduped, mode=job.mode, analysis=query_analysis)
 
         job.total_results_count = len(ranked)
         job.progress = 85.0
@@ -136,6 +140,9 @@ class ResearchCoordinator:
 
         # Report Generation
         report = ReportGenerator.generate(job.id, job.query, ranked)
+        stats = dict(report.collection_stats or {})
+        stats["query_analysis"] = query_analysis.to_dict()
+        report.collection_stats = stats
         db.add(report)
 
         job.status = "completed"

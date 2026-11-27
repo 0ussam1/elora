@@ -68,6 +68,25 @@ class SourceDiagnosticResponse(BaseModel):
     status: str
     message: str
     last_checked_at: str
+
+
+class ResultFeedbackCreate(BaseModel):
+    feedback_type: str = Field(
+        ...,
+        pattern="^(relevant|irrelevant|wrong_version|duplicate|broken_link|incorrect_date|misleading_description)$",
+    )
+    comment: Optional[str] = Field(default=None, max_length=500)
+
+
+class ResultFeedbackResponse(BaseModel):
+    id: int
+    job_id: str
+    result_id: str
+    feedback_type: str
+    comment: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
     details: Optional[Dict[str, Any]] = None
 
 class CollectionLogResponse(BaseModel):

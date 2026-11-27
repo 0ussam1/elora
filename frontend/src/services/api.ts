@@ -57,9 +57,32 @@ export const api = {
 
   getResults: async (
     jobId: string,
-    params?: { source?: string; content_type?: string; min_relevance?: number; include_duplicates?: boolean }
+    params?: {
+      source?: string;
+      content_type?: string;
+      language?: string;
+      verification_status?: string;
+      academic_only?: boolean;
+      open_access_only?: boolean;
+      min_relevance?: number;
+      include_duplicates?: boolean;
+      sort_by?: 'newest' | 'relevant' | 'oldest';
+    }
   ): Promise<ResearchResult[]> => {
     const res = await axios.get(`${API_BASE}/research/${jobId}/results`, { params });
+    return res.data;
+  },
+
+  submitFeedback: async (
+    jobId: string,
+    resultId: string,
+    feedback_type: 'relevant' | 'irrelevant' | 'wrong_version' | 'duplicate' | 'broken_link' | 'incorrect_date' | 'misleading_description',
+    comment?: string
+  ): Promise<any> => {
+    const res = await axios.post(`${API_BASE}/research/${jobId}/results/${resultId}/feedback`, {
+      feedback_type,
+      comment,
+    });
     return res.data;
   },
 
