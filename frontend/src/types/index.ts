@@ -168,3 +168,22 @@ export interface DiscoveryStatus {
   message?: string | null;
 }
 
+export interface WishlistItem {
+  id: string;
+  result_id?: string | null;
+  job_id?: string | null;
+  source_name: string;
+  source_item_id?: string | null;
+  title: string;
+  content_snippet?: string | null;
+  source_url: string;
+  canonical_url: string;
+  author?: string | null;
+  content_type: string;
+  published_at?: string | null;
+  saved_relevance_score: number;
+  validation_status: string;
+  metadata_fields?: Record<string, any>;
+  saved_at: string;
+}
+

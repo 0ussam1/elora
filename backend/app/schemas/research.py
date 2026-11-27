@@ -73,7 +73,7 @@ class SourceDiagnosticResponse(BaseModel):
 class ResultFeedbackCreate(BaseModel):
     feedback_type: str = Field(
         ...,
-        pattern="^(relevant|irrelevant|wrong_version|duplicate|broken_link|incorrect_date|misleading_description)$",
+        pattern="^(relevant|irrelevant|correct_match|incorrect_match|wrong_entity|wrong_version|wrong_topic|poor_score_relevant|inflated_score_irrelevant|duplicate|broken_link|incorrect_date|misleading_description)$",
     )
     comment: Optional[str] = Field(default=None, max_length=500)
 
@@ -85,6 +85,44 @@ class ResultFeedbackResponse(BaseModel):
     feedback_type: str
     comment: Optional[str] = None
     created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WishlistItemCreate(BaseModel):
+    result_id: Optional[str] = None
+    job_id: Optional[str] = None
+    source_name: str
+    source_item_id: Optional[str] = None
+    title: str
+    content_snippet: Optional[str] = None
+    source_url: str
+    canonical_url: Optional[str] = None
+    author: Optional[str] = None
+    content_type: str = "article"
+    published_at: Optional[datetime] = None
+    saved_relevance_score: float = 0.0
+    validation_status: str = "UNCHECKED"
+    metadata_fields: Dict[str, Any] = {}
+
+
+class WishlistItemResponse(BaseModel):
+    id: str
+    result_id: Optional[str] = None
+    job_id: Optional[str] = None
+    source_name: str
+    source_item_id: Optional[str] = None
+    title: str
+    content_snippet: Optional[str] = None
+    source_url: str
+    canonical_url: str
+    author: Optional[str] = None
+    content_type: str
+    published_at: Optional[datetime] = None
+    saved_relevance_score: float
+    validation_status: str
+    metadata_fields: Dict[str, Any] = {}
+    saved_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
     details: Optional[Dict[str, Any]] = None

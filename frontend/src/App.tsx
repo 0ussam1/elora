@@ -2,15 +2,16 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   Search, LayoutDashboard, Plus, FileText, Settings, 
   ArrowLeft, Terminal, Database, History, X, Zap, 
-  BookOpen, Globe, Code2, ShieldCheck, Sparkles
+  BookOpen, Globe, Code2, ShieldCheck, Sparkles, Bookmark
 } from 'lucide-react';
 import { api } from './services/api';
-import type { ResearchJob, SourceInfo, ResearchResult, ResearchReport, CollectionLog, SourceDiagnostic } from './types';
+import type { ResearchJob, SourceInfo, ResearchResult, ResearchReport, CollectionLog, SourceDiagnostic, WishlistItem } from './types';
 import { Dashboard } from './components/Dashboard';
 import { SearchPage } from './components/SearchPage';
 import { ResultsExplorer } from './components/ResultsExplorer';
 import { ReportView } from './components/ReportView';
 import { DiscoveryMode } from './components/DiscoveryMode';
+import { WishlistView } from './components/WishlistView';
 
 // ── ELORA Brand Logo ──────────────────────────────────────────────────────────
 export function EloraLogo({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
@@ -54,7 +55,7 @@ export function EloraLogo({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
 }
 
 // ── Application Tabs ─────────────────────────────────────────────────────────
-type Tab = 'home' | 'dashboard' | 'search' | 'job_detail' | 'settings' | 'discovery';
+type Tab = 'home' | 'dashboard' | 'search' | 'job_detail' | 'settings' | 'discovery' | 'wishlist';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<Tab>('home');
@@ -70,6 +71,10 @@ export function App() {
   const [jobViewTab, setJobViewTab] = useState<'results' | 'report' | 'logs'>('results');
   const [testingSourceId, setTestingSourceId] = useState<string | null>(null);
   const [diagnosticResults, setDiagnosticResults] = useState<Record<string, SourceDiagnostic>>({});
+  
+  // Wishlist State
+  const [wishlistItems, setWishlistItems] = useState<WishlistItem[]>([]);
+  const [savedUrls, setSavedUrls] = useState<Set<string>>(new Set());
   
   // Navigation Menu State
   const [menuOpen, setMenuOpen] = useState(false);
@@ -90,6 +95,7 @@ export function App() {
   useEffect(() => {
     loadSources();
     loadHistory();
+    loadWishlist();
   }, []);
 
   const loadSources = async () => {
@@ -107,6 +113,16 @@ export function App() {
       setJobs(data);
     } catch (err) {
       console.error("Failed to load history:", err);
+    }
+  };
+
+  const loadWishlist = async () => {
+    try {
+      const data = await api.getWishlist();
+      setWishlistItems(data);
+      setSavedUrls(new Set(data.map((i: WishlistItem) => i.source_url)));
+    } catch (err) {
+      console.error("Failed to load wishlist:", err);
     }
   };
 
@@ -239,8 +255,46 @@ export function App() {
     window.open(url, '_blank');
   };
 
-  const navigateTo = (tab: Tab) => {
-    setActiveTab(tab);
+  const handleToggleWishlist = async (item: ResearchResult) => {
+    if (savedUrls.has(item.source_url)) {
+      const found = wishlistItems.find(w => w.source_url === item.source_url);
+      if (found) {
+        try {
+          await api.removeFromWishlist(found.id);
+          await loadWishlist();
+        } catch (err) {
+          console.error("Failed to remove from wishlist:", err);
+        }
+      }
+    } else {
+      try {
+        await api.addToWishlist(item);
+        await loadWishlist();
+      } catch (err) {
+        console.error("Failed to add to wishlist:", err);
+      }
+    }
+  };
+
+  const handleRemoveWishlist = async (id: string) => {
+    try {
+      await api.removeFromWishlist(id);
+      await loadWishlist();
+    } catch (err) {
+      console.error("Failed to remove wishlist item:", err);
+    }
+  };
+
+  const handleVerifyWishlist = async (id: string) => {
+    try {
+      await api.verifyWishlistItem(id);
+      await loadWishlist();
+    } catch (err) {
+      console.error("Failed to verify wishlist item:", err);
+    }
+  };
+
+  const navigateTo = (tab: Tab) => {    setActiveTab(tab);
     setMenuOpen(false);
     if (tab !== 'job_detail') {
       setSelectedJobId(null);
@@ -254,6 +308,7 @@ export function App() {
     { icon: Search, label: 'New Search', tab: 'search' as Tab, desc: 'Advanced multi-source parameters' },
     { icon: History, label: 'Research History', tab: 'dashboard' as Tab, desc: 'Past investigations & evidence' },
     { icon: FileText, label: 'Reports', tab: 'dashboard' as Tab, desc: 'Synthesized intelligence briefs' },
+    { icon: Bookmark, label: 'Wishlist', tab: 'wishlist' as Tab, desc: 'Saved research results' },
     { icon: ShieldCheck, label: 'Connectors', tab: 'settings' as Tab, desc: 'API authorization & status' },
     { icon: Settings, label: 'Settings', tab: 'settings' as Tab, desc: 'Engine diagnostic controls' },
   ];
@@ -485,6 +540,8 @@ export function App() {
                 results={results}
                 query={currentJob.query}
                 onExport={handleExport}
+                savedUrls={savedUrls}
+                onToggleWishlist={handleToggleWishlist}
               />
             )}
 
@@ -648,7 +705,18 @@ export function App() {
           </div>
         )}
 
-        {/* VIEW 6: Discovery Mode ("Not Sure?") */}
+        {/* VIEW 6: Wishlist — Saved Research Results */}
+        {activeTab === 'wishlist' && (
+          <div className="max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+            <WishlistView
+              items={wishlistItems}
+              onRemove={handleRemoveWishlist}
+              onVerify={handleVerifyWishlist}
+            />
+          </div>
+        )}
+
+        {/* VIEW 7: Discovery Mode ("Not Sure?") */}
         {activeTab === 'discovery' && (
           <DiscoveryMode
             onBackToHome={() => navigateTo('home')}

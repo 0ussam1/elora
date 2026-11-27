@@ -2,7 +2,7 @@ import axios from 'axios';
 import type { 
   ResearchJob, ResearchResult, SourceInfo, ResearchReport, 
   CollectionLog, SourceDiagnostic, DiscoveryChatMessage, 
-  DiscoveryChatResponse, DiscoverySearchResponse, DiscoveryStatus 
+  DiscoveryChatResponse, DiscoverySearchResponse, DiscoveryStatus, WishlistItem
 } from '../types';
 
 // Use relative '/api' with Vite proxy so it works on localhost, mobile, and LAN without CORS or IP mismatches
@@ -76,13 +76,53 @@ export const api = {
   submitFeedback: async (
     jobId: string,
     resultId: string,
-    feedback_type: 'relevant' | 'irrelevant' | 'wrong_version' | 'duplicate' | 'broken_link' | 'incorrect_date' | 'misleading_description',
+    feedback_type: string,
     comment?: string
   ): Promise<any> => {
     const res = await axios.post(`${API_BASE}/research/${jobId}/results/${resultId}/feedback`, {
       feedback_type,
       comment,
     });
+    return res.data;
+  },
+
+  // ── Research Wishlist API ───────────────────────────────────────────────────
+  getWishlist: async (params?: {
+    source?: string;
+    content_type?: string;
+    q?: string;
+    sort_by?: 'saved_at' | 'relevance' | 'newest' | 'oldest';
+  }): Promise<WishlistItem[]> => {
+    const res = await axios.get(`${API_BASE}/wishlist`, { params });
+    return res.data;
+  },
+
+  addToWishlist: async (item: ResearchResult): Promise<WishlistItem> => {
+    const res = await axios.post(`${API_BASE}/wishlist`, {
+      result_id: item.id,
+      job_id: item.job_id,
+      source_name: item.source_name,
+      source_item_id: item.source_item_id,
+      title: item.title,
+      content_snippet: item.content_snippet,
+      source_url: item.source_url,
+      canonical_url: item.source_url,
+      author: item.author,
+      content_type: item.content_type,
+      published_at: item.published_at,
+      saved_relevance_score: item.relevance_score,
+      validation_status: item.metadata_fields?.validation_status || 'UNCHECKED',
+      metadata_fields: item.metadata_fields || {},
+    });
+    return res.data;
+  },
+
+  removeFromWishlist: async (itemId: string): Promise<void> => {
+    await axios.delete(`${API_BASE}/wishlist/${itemId}`);
+  },
+
+  verifyWishlistItem: async (itemId: string): Promise<WishlistItem> => {
+    const res = await axios.post(`${API_BASE}/wishlist/${itemId}/verify`);
     return res.data;
   },
 

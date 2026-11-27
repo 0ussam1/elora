@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ExternalLink, Filter, Download, User, Calendar, ThumbsUp, ThumbsDown, Flag } from 'lucide-react';
+import { ExternalLink, Filter, Download, User, Calendar, ThumbsUp, ThumbsDown, Flag, Bookmark } from 'lucide-react';
 import type { ResearchResult } from '../types';
 import { api } from '../services/api';
 
@@ -19,9 +19,11 @@ interface ResultsExplorerProps {
   results: ResearchResult[];
   query: string;
   onExport: (format: 'csv' | 'json') => void;
+  savedUrls?: Set<string>;
+  onToggleWishlist?: (item: ResearchResult) => void;
 }
 
-export const ResultsExplorer: React.FC<ResultsExplorerProps> = ({ results, onExport }) => {
+export const ResultsExplorer: React.FC<ResultsExplorerProps> = ({ results, onExport, savedUrls, onToggleWishlist }) => {
   const [filterSource, setFilterSource] = useState('all');
   const [filterType, setFilterType] = useState('all');
   const [filterLanguage, setFilterLanguage] = useState('all');
@@ -30,8 +32,9 @@ export const ResultsExplorer: React.FC<ResultsExplorerProps> = ({ results, onExp
   const [openAccessOnly, setOpenAccessOnly] = useState(false);
   const [minRelevance] = useState(0);
   const [searchKeyword, setSearchKeyword] = useState('');
-  const [sortBy, setSortBy] = useState<'newest' | 'relevant' | 'oldest'>('newest');
+  const [sortBy, setSortBy] = useState<'relevant' | 'newest' | 'oldest'>('relevant');
   const [feedbackSent, setFeedbackSent] = useState<Record<string, string>>({});
+  const [expandedBreakdownId, setExpandedBreakdownId] = useState<string | null>(null);
 
   const handleFeedback = async (
     item: ResearchResult,
@@ -186,11 +189,11 @@ export const ResultsExplorer: React.FC<ResultsExplorerProps> = ({ results, onExp
         <div className="flex items-center gap-2">
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as 'newest' | 'relevant' | 'oldest')}
+            onChange={(e) => setSortBy(e.target.value as 'relevant' | 'newest' | 'oldest')}
             className="bg-slate-950 border border-slate-800 text-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
           >
-            <option value="newest">Sort: Newest First</option>
             <option value="relevant">Sort: Most Relevant</option>
+            <option value="newest">Sort: Newest First</option>
             <option value="oldest">Sort: Oldest First</option>
           </select>
 
@@ -272,14 +275,44 @@ export const ResultsExplorer: React.FC<ResultsExplorerProps> = ({ results, onExp
                     </a>
                   </div>
 
-                  {/* Relevance Badge */}
-                  <div className="flex flex-col items-end flex-shrink-0">
-                    <div className="flex items-center gap-1 text-xs font-bold text-sky-400 bg-sky-950/60 px-2 py-1 rounded-lg border border-sky-800/40">
+                  {/* Relevance Badge & Bookmark */}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {onToggleWishlist && (
+                      <button
+                        onClick={() => onToggleWishlist(item)}
+                        title={savedUrls?.has(item.source_url) ? 'Remove from Wishlist' : 'Save to Wishlist'}
+                        className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                          savedUrls?.has(item.source_url)
+                            ? 'bg-[#18BFFF]/15 border-[#18BFFF]/50 text-[#18BFFF]'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-sky-400 hover:border-slate-700'
+                        }`}
+                      >
+                        <Bookmark className={`w-3.5 h-3.5 ${savedUrls?.has(item.source_url) ? 'fill-current' : ''}`} />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setExpandedBreakdownId(expandedBreakdownId === item.id ? null : item.id)}
+                      title="Inspect match score breakdown"
+                      className="flex items-center gap-1 text-xs font-bold text-sky-400 bg-sky-950/60 hover:bg-sky-950 px-2 py-1 rounded-lg border border-sky-800/40 cursor-pointer transition"
+                    >
                       <span>{scorePercent}%</span>
                       <span className="text-[10px] text-slate-400 font-normal">match</span>
-                    </div>
+                    </button>
                   </div>
                 </div>
+
+                {/* Expandable Match Breakdown */}
+                {expandedBreakdownId === item.id && item.metadata_fields?.match_breakdown && (
+                  <div className="bg-slate-950/70 border border-slate-800/80 rounded-lg p-2.5 text-[11px] text-slate-300 flex flex-wrap gap-3">
+                    <span>Title: <strong>{item.metadata_fields.match_breakdown.title}%</strong></span>
+                    <span>Description: <strong>{item.metadata_fields.match_breakdown.description}%</strong></span>
+                    <span>Topic/Qualifiers: <strong>{item.metadata_fields.match_breakdown.topic}%</strong></span>
+                    <span>Semantic/BM25: <strong>{item.metadata_fields.match_breakdown.semantic}%</strong></span>
+                    {item.metadata_fields.match_breakdown.entity_version !== null && (
+                      <span>Entity/Version: <strong>{item.metadata_fields.match_breakdown.entity_version}%</strong></span>
+                    )}
+                  </div>
+                )}
 
                 {/* Excerpt */}
                 <p className="text-xs text-slate-300 leading-relaxed line-clamp-3">

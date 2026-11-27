@@ -111,6 +111,27 @@ class ResultFeedback(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     job_id = Column(String(36), ForeignKey("research_jobs.id"), nullable=False, index=True)
     result_id = Column(String(64), ForeignKey("research_results.id"), nullable=False, index=True)
-    feedback_type = Column(String(50), nullable=False)  # relevant, irrelevant, wrong_version, duplicate, broken_link, incorrect_date, misleading_description
+    feedback_type = Column(String(50), nullable=False)
     comment = Column(Text, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
+
+
+class WishlistItem(Base):
+    __tablename__ = "wishlist_items"
+
+    id = Column(String(64), primary_key=True, index=True)
+    result_id = Column(String(64), nullable=True, index=True)
+    job_id = Column(String(36), nullable=True)
+    source_name = Column(String(50), nullable=False, index=True)
+    source_item_id = Column(String(255), nullable=True)
+    title = Column(String(500), nullable=False)
+    content_snippet = Column(Text, nullable=True)
+    source_url = Column(String(1000), nullable=False)
+    canonical_url = Column(String(1000), nullable=False, unique=True, index=True)
+    author = Column(String(255), nullable=True)
+    content_type = Column(String(50), default="article", index=True)
+    published_at = Column(DateTime, nullable=True)
+    saved_relevance_score = Column(Float, default=0.0)
+    validation_status = Column(String(50), default="UNCHECKED")
+    metadata_fields = Column(JSON, default=dict)
+    saved_at = Column(DateTime, default=_utcnow, index=True)

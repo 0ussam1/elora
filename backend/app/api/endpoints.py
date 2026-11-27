@@ -9,15 +9,16 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
-from app.models.database import ResearchJob, ResearchResult, ResearchReport, CollectionLog, ResultFeedback
+from app.models.database import ResearchJob, ResearchResult, ResearchReport, CollectionLog, ResultFeedback, WishlistItem
 from app.schemas.research import (
     ResearchJobCreate, ResearchJobResponse, ResearchResultResponse,
     ResearchReportResponse, SourceInfo, CollectionLogResponse, SourceDiagnosticResponse,
-    ResultFeedbackCreate, ResultFeedbackResponse
+    ResultFeedbackCreate, ResultFeedbackResponse, WishlistItemCreate, WishlistItemResponse
 )
 from app.connectors.registry import list_all_sources, get_connector
 from app.services.coordinator import ResearchCoordinator
 from app.pipeline.ranker import Ranker
+from app.pipeline.normalizer import Normalizer
 
 router = APIRouter()
 
@@ -145,7 +146,7 @@ def get_research_results(
     date_to: Optional[str] = None,
     min_relevance: Optional[float] = 0.0,
     include_duplicates: bool = False,
-    sort_by: str = Query("newest", pattern="^(newest|relevant|oldest)$"),
+    sort_by: str = Query("relevant", pattern="^(relevant|newest|oldest)$"),
     limit: int = 50,
     offset: int = 0,
     db: Session = Depends(get_db)
@@ -288,3 +289,114 @@ def export_research_results(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=research_{job_id}.csv"}
     )
+
+
+# ── Research Wishlist Endpoints ───────────────────────────────────────────────
+
+@router.get("/wishlist", response_model=List[WishlistItemResponse])
+def get_wishlist_items(
+    source: Optional[str] = None,
+    content_type: Optional[str] = None,
+    q: Optional[str] = None,
+    sort_by: str = Query("saved_at", pattern="^(saved_at|relevance|newest|oldest)$"),
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db)
+):
+    query = db.query(WishlistItem)
+    if source:
+        query = query.filter(WishlistItem.source_name == source)
+    if content_type:
+        query = query.filter(WishlistItem.content_type == content_type)
+    items = query.all()
+
+    if q and q.strip():
+        q_low = q.strip().lower()
+        items = [
+            it for it in items
+            if q_low in (it.title or "").lower() or q_low in (it.content_snippet or "").lower()
+        ]
+
+    if sort_by == "relevance":
+        items.sort(key=lambda x: (-x.saved_relevance_score, x.id))
+    elif sort_by == "newest":
+        dated = [x for x in items if x.published_at is not None]
+        undated = [x for x in items if x.published_at is None]
+        dated.sort(key=lambda x: (-x.published_at.timestamp(), x.id))
+        items = dated + undated
+    elif sort_by == "oldest":
+        dated = [x for x in items if x.published_at is not None]
+        undated = [x for x in items if x.published_at is None]
+        dated.sort(key=lambda x: (x.published_at.timestamp(), x.id))
+        items = dated + undated
+    else:
+        items.sort(key=lambda x: (-(x.saved_at.timestamp() if x.saved_at else 0.0), x.id))
+
+    return items[offset : offset + limit]
+
+
+@router.post("/wishlist", response_model=WishlistItemResponse)
+def add_wishlist_item(payload: WishlistItemCreate, db: Session = Depends(get_db)):
+    canon = Normalizer.canonical_url(payload.canonical_url or payload.source_url)
+    existing = db.query(WishlistItem).filter(WishlistItem.canonical_url == canon).first()
+    if existing:
+        # Prevent duplicates: return existing saved item cleanly
+        return existing
+
+    import hashlib
+    item_id = hashlib.sha256(canon.encode("utf-8")).hexdigest()[:24]
+    norm_pub = Normalizer.normalize_datetime(payload.published_at)
+
+    item = WishlistItem(
+        id=item_id,
+        result_id=payload.result_id,
+        job_id=payload.job_id,
+        source_name=payload.source_name,
+        source_item_id=payload.source_item_id,
+        title=Normalizer.clean_text(payload.title),
+        content_snippet=Normalizer.clean_text(payload.content_snippet) if payload.content_snippet else None,
+        source_url=payload.source_url,
+        canonical_url=canon,
+        author=Normalizer.clean_text(payload.author) if payload.author else None,
+        content_type=payload.content_type or "article",
+        published_at=norm_pub,
+        saved_relevance_score=payload.saved_relevance_score,
+        validation_status=payload.validation_status or "UNCHECKED",
+        metadata_fields=payload.metadata_fields or {},
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.delete("/wishlist/{item_id}")
+def delete_wishlist_item(item_id: str, db: Session = Depends(get_db)):
+    item = db.query(WishlistItem).filter(WishlistItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Wishlist item not found")
+    db.delete(item)
+    db.commit()
+    return {"status": "deleted", "id": item_id}
+
+
+@router.post("/wishlist/{item_id}/verify", response_model=WishlistItemResponse)
+async def verify_wishlist_item(item_id: str, db: Session = Depends(get_db)):
+    """Re-verify a saved Wishlist item's source link status without losing the saved record."""
+    from app.services.validator import ValidationService
+    from app.core.resilience import get_shared_http_client
+
+    item = db.query(WishlistItem).filter(WishlistItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Wishlist item not found")
+
+    client = get_shared_http_client()
+    outcome = await ValidationService.level2_lightweight_verify(item.source_url, client)
+    new_status = outcome.get("validation_status", item.validation_status)
+    item.validation_status = new_status
+    meta = dict(item.metadata_fields or {})
+    meta.update(outcome)
+    item.metadata_fields = meta
+    db.commit()
+    db.refresh(item)
+    return item
