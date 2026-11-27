@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   Search, LayoutDashboard, Plus, FileText, Settings, 
   ArrowLeft, Terminal, Database, History, X, Zap, 
-  BookOpen, Globe, Code2, ShieldCheck, Sparkles, Bookmark
+  BookOpen, Globe, Code2, ShieldCheck, Sparkles, Bookmark, Newspaper
 } from 'lucide-react';
 import { api } from './services/api';
 import type { ResearchJob, SourceInfo, ResearchResult, ResearchReport, CollectionLog, SourceDiagnostic, WishlistItem } from './types';
@@ -752,7 +752,7 @@ function HomePageHero({
   onNavigateDiscovery
 }: HomePageHeroProps) {
   const [query, setQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<'all' | 'web' | 'developer' | 'academic' | 'problem'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'news' | 'web' | 'developer' | 'academic' | 'problem'>('all');
 
   const operationalSources = sources
     .filter(s => s.health_status === 'operational' || s.health_status === 'connected')
@@ -761,6 +761,11 @@ function HomePageHero({
   // Determine mode and source subset based on category filter
   const getFilterParams = () => {
     switch (categoryFilter) {
+      case 'news':
+        return {
+          mode: 'general',
+          sources: operationalSources.filter(id => ['news', 'bbc_news', 'al_jazeera', 'deutsche_welle', 'france24', 'the_guardian', 'euronews', 'sky_news'].includes(id))
+        };
       case 'web':
         return {
           mode: 'general',
@@ -804,6 +809,7 @@ function HomePageHero({
 
   const categories = [
     { id: 'all', label: 'All Sources', icon: Globe },
+    { id: 'news', label: 'News Wires', icon: Newspaper },
     { id: 'web', label: 'Web', icon: Globe },
     { id: 'developer', label: 'Developer', icon: Code2 },
     { id: 'academic', label: 'Academic', icon: BookOpen },

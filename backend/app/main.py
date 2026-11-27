@@ -7,21 +7,34 @@ _backend_dir = str(Path(__file__).resolve().parent.parent)
 if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.database.session import engine, Base
+from app.database.session import engine, Base, SessionLocal
 from app.api.endpoints import router as api_router
 from app.api.discovery_endpoints import router as discovery_router
+from app.services.news_service import NewsService
 import app.models.database # ensure models are registered with Base
 
 # Create tables if not existing
 Base.metadata.create_all(bind=engine)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: seed default news feeds in database
+    try:
+        with SessionLocal() as db:
+            NewsService.seed_default_feeds(db)
+    except Exception:
+        pass
+    yield
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Multi-Source AI Research Engine REST API with Evidence Traceability",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS — allow localhost for dev + any Vercel domain for production

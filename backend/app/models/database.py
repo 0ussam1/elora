@@ -135,3 +135,59 @@ class WishlistItem(Base):
     validation_status = Column(String(50), default="UNCHECKED")
     metadata_fields = Column(JSON, default=dict)
     saved_at = Column(DateTime, default=_utcnow, index=True)
+
+
+class NewsFeed(Base):
+    __tablename__ = "news_feeds"
+
+    id = Column(String(64), primary_key=True)  # e.g. "bbc_world", "aljazeera_all", "dw_en", "france24_en"
+    publisher = Column(String(100), nullable=False, index=True)  # e.g. "BBC News"
+    name = Column(String(150), nullable=False)  # e.g. "BBC News - World"
+    feed_url = Column(String(500), nullable=False, unique=True)
+    category = Column(String(50), default="world", index=True)  # world, technology, business, politics, investigations, science
+    language = Column(String(10), default="en", index=True)  # en, fr, ar
+    is_enabled = Column(Boolean, default=True)
+
+    # Ingestion & Health Tracking
+    etag = Column(String(255), nullable=True)
+    last_modified_header = Column(String(255), nullable=True)
+    last_attempted_at = Column(DateTime, nullable=True)
+    last_successful_at = Column(DateTime, nullable=True)
+    http_status = Column(Integer, nullable=True)
+    response_time_ms = Column(Integer, default=0)
+    articles_count = Column(Integer, default=0)
+    latest_pub_date = Column(DateTime, nullable=True)
+    health_status = Column(String(50), default="operational")  # operational, temporarily_unavailable, invalid_feed, access_restricted, disabled
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    articles = relationship("IndexedNewsArticle", back_populates="feed", cascade="all, delete-orphan")
+
+
+class IndexedNewsArticle(Base):
+    __tablename__ = "indexed_news_articles"
+
+    id = Column(String(64), primary_key=True, index=True)  # SHA-256 hash of canonical_url
+    feed_id = Column(String(64), ForeignKey("news_feeds.id"), nullable=False, index=True)
+    publisher = Column(String(100), nullable=False, index=True)
+    title = Column(String(500), nullable=False, index=True)
+    content_snippet = Column(Text, nullable=True)
+    source_url = Column(String(1000), nullable=False)
+    canonical_url = Column(String(1000), nullable=False, unique=True, index=True)
+    author = Column(String(255), nullable=True)
+    published_at = Column(DateTime, nullable=True, index=True)
+    language = Column(String(10), default="en", index=True)
+    category = Column(String(50), default="world", index=True)
+    tags = Column(JSON, default=list)
+    image_url = Column(String(1000), nullable=True)
+    guid = Column(String(500), nullable=True)
+    retrieved_at = Column(DateTime, default=_utcnow, index=True)
+    metadata_fields = Column(JSON, default=dict)
+
+    feed = relationship("NewsFeed", back_populates="articles")
+
+    __table_args__ = (
+        Index("ix_news_articles_pub_date", "published_at"),
+        Index("ix_news_articles_publisher_cat", "publisher", "category"),
+    )

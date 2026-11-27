@@ -26,6 +26,12 @@ from app.connectors.nsa_archive import NSAArchiveConnector
 from app.connectors.nat_sec_archive import NatSecArchiveConnector
 from app.connectors.nara import NARAConnector
 from app.connectors.icij_offshore import ICIJOffshoreLeaksConnector
+# Dedicated News Sources — Multi-Source News Integration
+from app.connectors.news import (
+    NewsConnector, BBCNewsConnector, AlJazeeraConnector,
+    DeutscheWelleConnector, France24Connector, TheGuardianConnector,
+    EuronewsConnector, SkyNewsConnector
+)
 
 CONNECTOR_REGISTRY: Dict[str, BaseConnector] = {
     "hackernews": HackerNewsConnector(),
@@ -54,6 +60,15 @@ CONNECTOR_REGISTRY: Dict[str, BaseConnector] = {
     "nat_sec_archive": NatSecArchiveConnector(),
     "nara": NARAConnector(),
     "icij_offshore": ICIJOffshoreLeaksConnector(),
+    # Dedicated News Sources
+    "news": NewsConnector(),
+    "bbc_news": BBCNewsConnector(),
+    "al_jazeera": AlJazeeraConnector(),
+    "deutsche_welle": DeutscheWelleConnector(),
+    "france24": France24Connector(),
+    "the_guardian": TheGuardianConnector(),
+    "euronews": EuronewsConnector(),
+    "sky_news": SkyNewsConnector(),
 }
 
 def get_connector(source_id: str) -> BaseConnector | None:

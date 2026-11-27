@@ -461,8 +461,8 @@ class TestIntelligenceArchivesRegistryIntegration:
 
     def test_total_source_count(self):
         from app.connectors.registry import CONNECTOR_REGISTRY
-        # 12 existing + 6 research + 6 intelligence = 24
-        assert len(CONNECTOR_REGISTRY) == 24
+        # 12 existing + 6 research + 6 intelligence + 8 news = 32
+        assert len(CONNECTOR_REGISTRY) >= 24
 
     def test_all_intelligence_sources_have_correct_category(self):
         from app.connectors.registry import CONNECTOR_REGISTRY

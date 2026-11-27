@@ -152,3 +152,31 @@ class ResearchReportResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class NewsFeedResponse(BaseModel):
+    id: str
+    publisher: str
+    name: str
+    feed_url: str
+    category: str
+    language: str
+    is_enabled: bool
+    health_status: str
+    http_status: Optional[int] = None
+    response_time_ms: int = 0
+    articles_count: int = 0
+    latest_pub_date: Optional[datetime] = None
+    last_attempted_at: Optional[datetime] = None
+    last_successful_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NewsIngestResponse(BaseModel):
+    status: str
+    message: Optional[str] = None
+    total_feeds: int = 0
+    successful_feeds: int = 0
+    results: List[Dict[str, Any]] = []

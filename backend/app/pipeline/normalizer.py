@@ -1,5 +1,6 @@
 import re
 import hashlib
+import email.utils
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse, urlunparse
@@ -34,6 +35,16 @@ SOURCE_QUALITY_META: Dict[str, Dict[str, Any]] = {
     "lemmy": {"source_quality_tier": "community_discussion", "source_quality_label": "Federated Community Discussion", "is_academic": False},
     "mastodon": {"source_quality_tier": "social_microblog", "source_quality_label": "Federated Public Posts", "is_academic": False},
     "web_search": {"source_quality_tier": "web_index", "source_quality_label": "General Web Index", "is_academic": False},
+    # Dedicated News Sources
+    "news": {"source_quality_tier": "international_news", "source_quality_label": "International News Wire", "is_academic": False},
+    "bbc_news": {"source_quality_tier": "international_news", "source_quality_label": "BBC News International", "is_academic": False},
+    "al_jazeera": {"source_quality_tier": "international_news", "source_quality_label": "Al Jazeera Media Network", "is_academic": False},
+    "deutsche_welle": {"source_quality_tier": "international_news", "source_quality_label": "Deutsche Welle (DW)", "is_academic": False},
+    "france24": {"source_quality_tier": "international_news", "source_quality_label": "France 24 International", "is_academic": False},
+    "the_guardian": {"source_quality_tier": "international_news", "source_quality_label": "The Guardian", "is_academic": False},
+    "euronews": {"source_quality_tier": "international_news", "source_quality_label": "Euronews Network", "is_academic": False},
+    "sky_news": {"source_quality_tier": "international_news", "source_quality_label": "Sky News", "is_academic": False},
+    "propublica": {"source_quality_tier": "investigative_journalism", "source_quality_label": "ProPublica Investigative", "is_academic": False},
 }
 
 
@@ -51,10 +62,11 @@ class Normalizer:
     def canonical_url(url: str) -> str:
         try:
             parsed = urlparse(url)
-            # Remove tracking params like utm_*, ref, etc.
+            # Remove tracking params like utm_*, ref, at_medium, etc.
+            tracking_prefixes = ("utm_", "ref=", "at_medium", "at_campaign", "at_source", "feedname=", "feedtype=")
             filtered_query = "&".join(
                 q for q in parsed.query.split("&")
-                if q and not q.startswith("utm_") and not q.startswith("ref=")
+                if q and not any(q.lower().startswith(p) for p in tracking_prefixes)
             )
             clean = parsed._replace(query=filtered_query, fragment="")
             return urlunparse(clean).rstrip("/")
@@ -65,6 +77,7 @@ class Normalizer:
     def normalize_datetime(dt: Any) -> Optional[datetime]:
         """
         Normalize publication date into consistent UTC representation.
+        Supports ISO-8601, RFC-822/2822 RSS formats, and standard date strings.
         Detects invalid/corrupted dates and never fabricates missing dates.
         """
         if dt is None:
@@ -76,9 +89,21 @@ class Normalizer:
             raw = dt.strip()
             if not raw:
                 return None
+            # 1. Try ISO-8601
             try:
                 parsed_dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
             except Exception:
+                pass
+
+            # 2. Try RFC-2822 / RFC-822 (standard RSS pubDate: e.g. "Fri, 27 Nov 2026 17:17:11 GMT")
+            if parsed_dt is None:
+                try:
+                    parsed_dt = email.utils.parsedate_to_datetime(raw)
+                except Exception:
+                    pass
+
+            # 3. Fallback to common date formats
+            if parsed_dt is None:
                 for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d %b %Y", "%B %d, %Y", "%Y"):
                     try:
                         parsed_dt = datetime.strptime(raw[:20], fmt)

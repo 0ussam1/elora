@@ -8,12 +8,16 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.database.session import get_db
-from app.models.database import ResearchJob, ResearchResult, ResearchReport, CollectionLog, ResultFeedback, WishlistItem
+from app.database.session import get_db, SessionLocal
+from app.models.database import (
+    ResearchJob, ResearchResult, ResearchReport, CollectionLog, ResultFeedback, WishlistItem,
+    NewsFeed, IndexedNewsArticle
+)
 from app.schemas.research import (
     ResearchJobCreate, ResearchJobResponse, ResearchResultResponse,
     ResearchReportResponse, SourceInfo, CollectionLogResponse, SourceDiagnosticResponse,
-    ResultFeedbackCreate, ResultFeedbackResponse, WishlistItemCreate, WishlistItemResponse
+    ResultFeedbackCreate, ResultFeedbackResponse, WishlistItemCreate, WishlistItemResponse,
+    NewsFeedResponse, NewsIngestResponse
 )
 from app.connectors.registry import list_all_sources, get_connector
 from app.services.coordinator import ResearchCoordinator
@@ -394,9 +398,112 @@ async def verify_wishlist_item(item_id: str, db: Session = Depends(get_db)):
     outcome = await ValidationService.level2_lightweight_verify(item.source_url, client)
     new_status = outcome.get("validation_status", item.validation_status)
     item.validation_status = new_status
-    meta = dict(item.metadata_fields or {})
-    meta.update(outcome)
-    item.metadata_fields = meta
     db.commit()
     db.refresh(item)
     return item
+
+
+# ── Dedicated News System Endpoints ──────────────────────────────────────────
+
+@router.get("/news/feeds", response_model=List[NewsFeedResponse])
+def get_news_feeds(db: Session = Depends(get_db)):
+    """List all monitored news feeds with health status and statistics."""
+    from app.services.news_service import NewsService
+    NewsService.seed_default_feeds(db)
+    return db.query(NewsFeed).order_by(NewsFeed.publisher, NewsFeed.name).all()
+
+
+@router.post("/news/feeds/{feed_id}/toggle")
+def toggle_news_feed(feed_id: str, db: Session = Depends(get_db)):
+    """Enable or disable a specific news feed from ingestion and search."""
+    feed = db.query(NewsFeed).filter(NewsFeed.id == feed_id).first()
+    if not feed:
+        raise HTTPException(status_code=404, detail="News feed not found")
+    feed.is_enabled = not feed.is_enabled
+    if not feed.is_enabled:
+        feed.health_status = "disabled"
+    else:
+        feed.health_status = "operational"
+    db.commit()
+    db.refresh(feed)
+    return {
+        "id": feed.id,
+        "name": feed.name,
+        "is_enabled": feed.is_enabled,
+        "health_status": feed.health_status
+    }
+
+
+@router.post("/news/ingest", response_model=NewsIngestResponse)
+async def trigger_news_ingestion(
+    background_tasks: BackgroundTasks,
+    force_sync: bool = Query(False, description="Run synchronously and wait for results"),
+    db: Session = Depends(get_db)
+):
+    """
+    Trigger feed ingestion across all enabled international news feeds.
+    Uses conditional GET (ETag / Last-Modified) to avoid re-downloading unchanged content.
+    """
+    from app.services.news_service import NewsService
+
+    if force_sync:
+        result = await NewsService.ingest_all_feeds(db)
+        return result
+
+    # Non-blocking background ingestion
+    async def _bg_ingest():
+        with SessionLocal() as bg_db:
+            await NewsService.ingest_all_feeds(bg_db)
+
+    background_tasks.add_task(_bg_ingest)
+    feeds_count = db.query(NewsFeed).filter(NewsFeed.is_enabled == True).count()
+    return {
+        "status": "triggered",
+        "message": f"Background feed ingestion started for {feeds_count} enabled feeds.",
+        "total_feeds": feeds_count,
+        "successful_feeds": 0,
+        "results": []
+    }
+
+
+@router.get("/news/articles")
+def list_indexed_news_articles(
+    q: Optional[str] = Query(None, description="Search query terms"),
+    publisher: Optional[str] = Query(None, description="Filter by publisher"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    language: Optional[str] = Query(None, description="Filter by language (en, fr, ar)"),
+    limit: int = Query(25, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """Query locally indexed news articles with optional filters."""
+    query = db.query(IndexedNewsArticle)
+    if publisher:
+        query = query.filter(IndexedNewsArticle.publisher.ilike(f"%{publisher}%"))
+    if category:
+        query = query.filter(IndexedNewsArticle.category == category)
+    if language:
+        query = query.filter(IndexedNewsArticle.language == language)
+    if q:
+        query = query.filter(
+            (IndexedNewsArticle.title.ilike(f"%{q}%")) |
+            (IndexedNewsArticle.content_snippet.ilike(f"%{q}%"))
+        )
+    articles = query.order_by(IndexedNewsArticle.published_at.desc()).limit(limit).all()
+    return [
+        {
+            "id": a.id,
+            "publisher": a.publisher,
+            "title": a.title,
+            "content_snippet": a.content_snippet,
+            "source_url": a.source_url,
+            "canonical_url": a.canonical_url,
+            "author": a.author,
+            "published_at": a.published_at.isoformat() if a.published_at else None,
+            "language": a.language,
+            "category": a.category,
+            "tags": a.tags,
+            "image_url": a.image_url,
+            "guid": a.guid
+        }
+        for a in articles
+    ]
